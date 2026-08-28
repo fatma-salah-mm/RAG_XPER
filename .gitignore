@@ -1,0 +1,30 @@
+# Environment variables and secrets
+.env
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local Vector DB & Storage
+storage/
+*.db
+*.sqlite3
+
+# Test & IDE caches
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+
+# OS / Temporary files
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,32 @@
+# --- Document processing ---
+pymupdf>=1.24.0          # import as `pymupdf` -- native PDF text extraction + page rasterisation
+
+# --- OCR ---
+easyocr>=1.7.1
+paddleocr>=2.7.3
+paddlepaddle>=2.6.1
+
+# --- Vector stores ---
+qdrant-client>=1.9.0     # Fast Rust-based embedded & server vector database
+chromadb>=0.5.0          # Local embedded ChromaDB
+
+# --- LLM ---
+google-genai>=0.1.1
+google-generativeai>=0.7.2
+ollama>=0.3.0
+
+# --- Core utils ---
+numpy>=1.26.0
+pillow>=10.3.0
+python-dotenv>=1.0.1
+
+# --- Backend / API ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# --- Online demo UI ---
+gradio>=4.36.0
+
+# --- Testing ---
+pytest>=8.2.0
