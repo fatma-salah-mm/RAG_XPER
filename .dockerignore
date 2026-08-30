@@ -1,0 +1,7 @@
+.git
+.env
+.pytest_cache
+.vscode
+__pycache__
+storage/
+tests/
