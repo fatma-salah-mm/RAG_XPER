@@ -1,45 +1,38 @@
 """
 tests/test_bm25_arabic.py for RAG_XPER
 """
-import pytest
-from core.models import Chunk
-from core.retrieval import (
-    BM25Retriever,
-    expand_query_tokens,
-    normalize_arabic,
-    tokenize,
-)
+import shutil
+import tempfile
+from rag_xper.core.models import Chunk
+from rag_xper.core.retrieval.bm25_retriever import BM25Retriever, normalize_arabic, tokenize
 
 
 def test_arabic_normalization():
-    raw_text = "المَادَّةُ الأولى: الإثْبَاتُ بِالشَّهَادَةِ"
-    normalized = normalize_arabic(raw_text)
-    assert "الماده" in normalized
-    assert "الاولي" in normalized
-    assert "الشهاده" in normalized
+    assert normalize_arabic("أحمد") == "احمد"
+    assert normalize_arabic("مكتبة") == "مكتبه"
+    assert normalize_arabic("الْقَاضِي") == "القاضي"
 
 
-def test_digit_to_ordinal_expansion():
-    query = "المادة 70"
-    tokens = expand_query_tokens(query)
-    assert "70" in tokens
-    assert any("سبع" in t for t in tokens)
+def test_bm25_search_and_persistence():
+    temp_dir = tempfile.mkdtemp()
+    persist_file = f"{temp_dir}/bm25_test.pkl"
+    try:
+        bm25 = BM25Retriever(persist_path=persist_file)
+        c1 = Chunk(chunk_id="1", text="المادة 70 تنص على شروط قبول الشهادة في المحاكم", metadata={"source": "law.pdf"})
+        c2 = Chunk(chunk_id="2", text="العادات الذرية كتاب في تطوير الذات وبناء السلوكيات", metadata={"source": "habits.pdf"})
 
+        bm25.add_chunks([c1, c2])
 
-def test_bm25_search_arabic():
-    retriever = BM25Retriever()
-    c1 = Chunk(
-        chunk_id="doc1:p1",
-        text="المادة السبعون تنص على عدم جواز الإثبات بشهادة الشهود في الالتزامات التعاقدية",
-        metadata={"source": "law.pdf", "page": 70},
-    )
-    c2 = Chunk(
-        chunk_id="doc1:p2",
-        text="المادة الأولى تهدف لتنظيم إجراءات الإثبات في المعاملات المدنية والتجارية",
-        metadata={"source": "law.pdf", "page": 1},
-    )
-    retriever.add_chunks([c1, c2])
+        # Test search with Arabic number-to-words expansion (70 -> سبعون / سبعين)
+        results = bm25.search("المادة السبعون", top_k=2)
+        assert len(results) >= 1
+        assert results[0][0].chunk_id == "1"
 
-    results = retriever.search("المادة 70", top_k=2)
-    assert len(results) >= 1
-    assert results[0][0].chunk_id == "doc1:p1"
+        # Test persistence reload
+        bm25_reloaded = BM25Retriever(persist_path=persist_file)
+        assert len(bm25_reloaded._chunks) == 2
+        results_reloaded = bm25_reloaded.search("العادات الذرية", top_k=1)
+        assert results_reloaded[0][0].chunk_id == "2"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)

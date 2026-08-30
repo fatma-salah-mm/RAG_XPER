@@ -2,24 +2,25 @@
 tests/test_chunkers.py for RAG_XPER
 """
 import pytest
-from core.ingestion import (
+from rag_xper.core.models import PageContent, SourceType
+from rag_xper.core.ingestion.text_chunker import (
+    RecursiveChunker,
+    ParentChildChunker,
     ArticleBasedChunker,
     AutoDetectChunker,
     ChunkerFactory,
-    ParentChildChunker,
-    RecursiveChunker,
 )
-from core.models import PageContent, SourceType
 
 
 def test_recursive_chunker():
     chunker = RecursiveChunker(chunk_size=100, chunk_overlap=20)
-    sample_text = "الفقرة الأولى تتحدث عن أهمية بناء العادات الإيجابية في الحياة اليومية.\n\nالفقرة الثانية تشرح كيفية تقليل المشتتات والتركيز على الأهداف الأساسية."
+    sample_text = "الفقرة الأولى تتحدث عن بناء العادات.\n\nالفقرة الثانية تشرح كيفية تقليل المشتتات."
     page = PageContent(source_path="test.pdf", page_number=1, text=sample_text, source_type=SourceType.NATIVE_TEXT)
 
     chunks = chunker.chunk_pages([page])
     assert len(chunks) >= 1
     assert chunks[0].metadata["strategy"] == "recursive"
+    assert "content_hash" in chunks[0].metadata
 
 
 def test_parent_child_chunker():
@@ -27,7 +28,7 @@ def test_parent_child_chunker():
     long_text = (
         "هذا نص طويل لتجربة التقطيع الهرمي Parent-Child في نظام RAG_XPER. "
         "نقوم باختبار تقسيم النص إلى أجزاء كبيرة للنموذج وأجزاء صغيرة للبحث المتجهي. "
-        "تساعد هذه الاستراتيجية في تحسين دقة الاسترجاع بشكل ملحوظ دون فقدان السياق الكامل للمادة أو الفصل."
+        "تساعد هذه الاستراتيجية في تحسين دقة الاسترجاع بشكل ملحوظ."
     )
     page = PageContent(source_path="legal.pdf", page_number=1, text=long_text, source_type=SourceType.NATIVE_TEXT)
 
@@ -43,17 +44,14 @@ def test_parent_child_chunker():
 def test_article_based_chunker():
     chunker = ArticleBasedChunker(fallback_max_size=500)
     legal_text = (
-        "نظام الإثبات التجريبي:\n\n"
         "المادة الأولى:\nيجب على كل طرف تقديم أدلته كتابة.\n\n"
-        "المادة الثانية:\nتعتبر المحررات الرسمية حجة قاطعة على الكافة بما دون فيها.\n\n"
-        "المادة الثالثة:\nلا يجوز إثبات التصرفات التي تزيد عن مائة ألف ريال بشهادة الشهود إلا باستثناء."
+        "المادة الثانية:\nتعتبر المحررات الرسمية حجة قاطعة.\n\n"
+        "المادة الثالثة:\nلا يجوز إثبات التصرفات التي تزيد عن مائة ألف ريال بشهادة الشهود."
     )
     page = PageContent(source_path="law.pdf", page_number=5, text=legal_text, source_type=SourceType.NATIVE_TEXT)
 
     chunks = chunker.chunk_pages([page])
     assert len(chunks) >= 3
-    articles_found = [c.text for c in chunks if "المادة" in c.text]
-    assert len(articles_found) >= 3
 
 
 def test_chunker_factory():

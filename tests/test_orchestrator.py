@@ -1,64 +1,36 @@
 """
 tests/test_orchestrator.py for RAG_XPER
 """
-from core.generation import BaseLLM, RAGOrchestrator
-from core.ingestion import DocumentExtractor, OCREngine
-from core.models import Chunk, PageContent, RAGResponse, RetrievedChunk, SourceType
-from core.retrieval import BaseVectorStore
+import pytest
+from unittest.mock import MagicMock
+from rag_xper.core.models import Chunk, RetrievedChunk, RAGResponse
+from rag_xper.core.generation.rag_orchestrator import RAGOrchestrator
 
 
-class MockVectorStore(BaseVectorStore):
-    def __init__(self):
-        self.chunks = []
+def test_cot_parsing():
+    extractor = MagicMock()
+    ocr = MagicMock()
+    vector_store = MagicMock()
+    llm = MagicMock()
 
-    def upsert_chunks(self, chunks):
-        self.chunks.extend(chunks)
-        return len(chunks)
-
-    def similarity_search(self, query, top_k=4):
-        return [RetrievedChunk(chunk=c, score=0.95) for c in self.chunks[:top_k]]
-
-    def hybrid_search(self, query, top_k=6, fetch_k=25, alpha=0.5, rrf_k=60):
-        return [RetrievedChunk(chunk=c, score=0.035) for c in self.chunks[:top_k]]
-
-    def is_file_ingested(self, file_path):
-        return False
-
-    def delete_file(self, file_path):
-        return 0
-
-
-class MockLLM(BaseLLM):
-    def generate(self, prompt: str) -> str:
-        return "Reasoning: تم فحص المستند.\nAnswer: القيمة الإجمالية للعقد هي 500,000 ريال."
-
-    def embed(self, texts):
-        return [[0.1] * 8 for _ in texts]
-
-
-def test_rag_orchestrator_query():
-    extractor = DocumentExtractor()
-    ocr = OCREngine()
-    vector_store = MockVectorStore()
-    llm = MockLLM()
-
-    # Preload chunk
-    chunk = Chunk(
-        chunk_id="test_doc:p1:c0",
-        text="تنص المادة على أن القيمة الإجمالية للعقد هي 500,000 ريال سعودي.",
-        metadata={"source": "contract.pdf", "page": 1, "source_type": "native_text"},
-    )
-    vector_store.upsert_chunks([chunk])
-
-    orchestrator = RAGOrchestrator(
-        extractor=extractor,
-        ocr=ocr,
-        vector_store=vector_store,
-        llm=llm,
+    llm.generate.return_value = (
+        "Reasoning:\n"
+        "1. The document explicitly defines the author as James Clear.\n\n"
+        "Answer:\n"
+        "The author of the book is James Clear."
     )
 
-    response = orchestrator.query("ما هي قيمة العقد؟")
-    assert isinstance(response, RAGResponse)
-    assert "500,000" in response.answer
-    assert response.reasoning is not None
-    assert len(response.sources) >= 1
+    vector_store.hybrid_search.return_value = [
+        RetrievedChunk(
+            chunk=Chunk(chunk_id="1", text="Atomic Habits by James Clear", metadata={"source": "book.pdf", "page": 1}),
+            score=0.95,
+        )
+    ]
+
+    orch = RAGOrchestrator(extractor=extractor, ocr=ocr, vector_store=vector_store, llm=llm)
+    resp = orch.query("Who is the author?")
+
+    assert isinstance(resp, RAGResponse)
+    assert "James Clear" in resp.answer
+    assert "explicitly defines" in resp.reasoning
+    assert len(resp.sources) == 1
