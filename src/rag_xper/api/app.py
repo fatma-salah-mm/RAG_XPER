@@ -171,8 +171,14 @@ async def readiness_check():
 @app.get("/metrics", tags=["Health & Observability"])
 async def metrics_endpoint():
     """Operational metrics reporting total queries, ingests, and index size."""
-    orch = get_orchestrator()
-    bm25_count = len(getattr(orch._vector_store, "_bm25", [])._chunks) if hasattr(orch._vector_store, "_bm25") else 0
+    bm25_count = 0
+    try:
+        orch = get_orchestrator()
+        if hasattr(orch._vector_store, "_bm25"):
+            bm25_count = len(orch._vector_store._bm25._chunks)
+    except Exception:
+        pass
+
     return {
         "uptime_seconds": int(time.time() - _start_time),
         "total_queries": _stats["total_queries"],
@@ -308,12 +314,15 @@ async def ask_question(request: AskRequest):
 @app.get("/v1/documents", response_model=List[DocumentInfo], tags=["Documents"], dependencies=[Depends(verify_api_key)])
 async def list_documents():
     """List all unique indexed documents and their chunk counts."""
-    orch = get_orchestrator()
     doc_counts: Dict[str, int] = {}
-    if hasattr(orch._vector_store, "_bm25"):
-        for c in orch._vector_store._bm25._chunks:
-            src = Path(c.metadata.get("source", "doc")).name
-            doc_counts[src] = doc_counts.get(src, 0) + 1
+    try:
+        orch = get_orchestrator()
+        if hasattr(orch._vector_store, "_bm25"):
+            for c in orch._vector_store._bm25._chunks:
+                src = Path(c.metadata.get("source", "doc")).name
+                doc_counts[src] = doc_counts.get(src, 0) + 1
+    except Exception:
+        pass
 
     return [DocumentInfo(filename=fn, chunk_count=cnt) for fn, cnt in doc_counts.items()]
 
