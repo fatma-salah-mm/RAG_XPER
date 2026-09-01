@@ -1,0 +1,5 @@
+# Stage PDFs, images, Markdown, and text files here.
+# In Docker this folder is bind-mounted read-only at /app/data/documents and indexed with:
+#   POST /v1/ingest/folder
+# or from the CLI:
+#   rag-xper ingest-dir --recursive

@@ -30,6 +30,10 @@ COPY --from=builder /app /app
 ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV LOG_FORMAT=json
+ENV DOCUMENTS_DIR=/app/data/documents
+
+# Storage holds the embedded index and OCR weights; data holds source documents.
+RUN mkdir -p /app/data/documents /app/storage
 
 EXPOSE 8000
 EXPOSE 7861

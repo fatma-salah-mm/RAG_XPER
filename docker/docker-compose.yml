@@ -38,7 +38,11 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - COLLECTION_NAME=rag_xper_documents
       - REDIS_URL=redis://redis:6379
+      - API_KEYS=${API_KEYS}
+      - DOCUMENTS_DIR=/app/data/documents
     volumes:
+      # Stage PDFs on the host here, then index them with POST /v1/ingest/folder.
+      - ../data/documents:/app/data/documents:ro
       - app_storage:/app/storage
 
 volumes:

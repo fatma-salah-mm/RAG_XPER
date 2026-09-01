@@ -70,6 +70,10 @@ class Settings:
     max_upload_size_mb: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
     cors_origins: tuple = tuple([o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()])
 
+    # --- Server-side document folder ---
+    # Files staged here are indexed by POST /v1/ingest/folder without being uploaded.
+    documents_dir: str = os.getenv("DOCUMENTS_DIR", "./data/documents")
+
     def validate(self) -> None:
         """Fail fast if required configuration is missing or unusable."""
         if self.llm_provider not in ("gemini", "ollama"):

@@ -17,6 +17,16 @@ storage/
 *.db
 *.sqlite3
 
+# Source documents (mounted into the container, never committed)
+data/documents/*
+!data/documents/.gitkeep
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+.ruff_cache/
+
 # Test & IDE caches
 .pytest_cache/
 .coverage

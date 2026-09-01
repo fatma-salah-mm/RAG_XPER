@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, Dict, List, Optional
 
 from rag_xper.core.exceptions import DocumentExtractionError, OCRExtractionError
 from rag_xper.core.generation.llm_interface import BaseLLM
@@ -22,6 +22,10 @@ from rag_xper.utils.logger import get_logger
 logger = get_logger(__name__)
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
+_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+
+# Every extension the pipeline can ingest, shared by the API, the CLI, and folder scans.
+SUPPORTED_EXTENSIONS = {".pdf"} | _TEXT_EXTENSIONS | _IMAGE_EXTENSIONS
 
 _COT_PROMPT_TEMPLATE = """You are a highly accurate, professional assistant answering questions strictly and faithfully based on the CONTEXT below.
 
@@ -100,6 +104,63 @@ class RAGOrchestrator:
         stored_count = self._vector_store.upsert_chunks(chunks)
         logger.info("Ingested '%s' -> %d chunks stored via strategy '%s'", path.name, stored_count, active_strategy)
         return stored_count
+
+    def ingest_directory(
+        self,
+        directory: str,
+        strategy: Optional[str] = None,
+        recursive: bool = False,
+        force: bool = False,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> Dict[str, object]:
+        """Ingest every supported file in a folder.
+
+        A failure on one file is recorded in the report and does not abort the batch,
+        so a single corrupt PDF cannot stop a nightly load of hundreds of documents.
+        ``progress_callback`` receives ``(files_done, files_total)`` after each file.
+        """
+        root = Path(directory)
+        if not root.is_dir():
+            raise DocumentExtractionError(f"Directory not found: {directory}")
+
+        pattern = "**/*" if recursive else "*"
+        files = sorted(
+            p for p in root.glob(pattern)
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+        logger.info("Scanning '%s' -> %d supported file(s)", root, len(files))
+
+        report: Dict[str, object] = {
+            "directory": str(root),
+            "files": [],
+            "ingested": 0,
+            "skipped": 0,
+            "failed": 0,
+            "total_chunks": 0,
+        }
+
+        for index, path in enumerate(files, start=1):
+            try:
+                chunks = self.ingest_file(str(path), strategy=strategy, force=force)
+                outcome = "ingested" if chunks > 0 else "skipped"
+                report[outcome] += 1
+                report["total_chunks"] += chunks
+                report["files"].append({"file": path.name, "status": outcome, "chunks": chunks})
+            except Exception as exc:
+                logger.error("Failed to ingest '%s': %s", path.name, exc)
+                report["failed"] += 1
+                report["files"].append(
+                    {"file": path.name, "status": "failed", "chunks": 0, "error": str(exc)}
+                )
+
+            if progress_callback:
+                progress_callback(index, len(files))
+
+        logger.info(
+            "Directory ingest complete: %d ingested, %d skipped, %d failed, %d chunks",
+            report["ingested"], report["skipped"], report["failed"], report["total_chunks"],
+        )
+        return report
 
     def _resolve_ocr_pages(self, pages: List[PageContent]) -> List[PageContent]:
         resolved: List[PageContent] = []

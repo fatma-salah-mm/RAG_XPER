@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import time
 import uuid
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class JobStatus(str, Enum):
@@ -31,6 +32,8 @@ class IngestionJob:
     error: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     completed_at: Optional[float] = None
+    # Per-file breakdown for folder ingestion jobs; None for single-file jobs.
+    details: Optional[Dict[str, Any]] = None
 
 
 class JobManager:
@@ -38,6 +41,8 @@ class JobManager:
 
     def __init__(self) -> None:
         self._jobs: Dict[str, IngestionJob] = {}
+        # Background tasks run on worker threads, so every mutation is guarded.
+        self._lock = threading.Lock()
 
     def create_job(self, filename: str, strategy: str = "recursive") -> IngestionJob:
         job_id = str(uuid.uuid4())
@@ -48,32 +53,43 @@ class JobManager:
             status=JobStatus.PENDING,
             progress=0,
         )
-        self._jobs[job_id] = job
+        with self._lock:
+            self._jobs[job_id] = job
         return job
 
     def get_job(self, job_id: str) -> Optional[IngestionJob]:
-        return self._jobs.get(job_id)
+        with self._lock:
+            return self._jobs.get(job_id)
 
     def update_progress(self, job_id: str, progress: int, status: JobStatus = JobStatus.PROCESSING) -> None:
-        job = self._jobs.get(job_id)
-        if job:
-            job.progress = progress
-            job.status = status
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job:
+                job.progress = progress
+                job.status = status
 
-    def complete_job(self, job_id: str, chunks_ingested: int) -> None:
-        job = self._jobs.get(job_id)
-        if job:
-            job.status = JobStatus.COMPLETED
-            job.progress = 100
-            job.chunks_ingested = chunks_ingested
-            job.completed_at = time.time()
+    def complete_job(
+        self,
+        job_id: str,
+        chunks_ingested: int,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job:
+                job.status = JobStatus.COMPLETED
+                job.progress = 100
+                job.chunks_ingested = chunks_ingested
+                job.details = details
+                job.completed_at = time.time()
 
     def fail_job(self, job_id: str, error_message: str) -> None:
-        job = self._jobs.get(job_id)
-        if job:
-            job.status = JobStatus.FAILED
-            job.error = error_message
-            job.completed_at = time.time()
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job:
+                job.status = JobStatus.FAILED
+                job.error = error_message
+                job.completed_at = time.time()
 
 
 job_manager = JobManager()

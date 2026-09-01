@@ -144,6 +144,17 @@ def main() -> None:
     ingest_p.add_argument("--strategy", choices=["recursive", "parent_child", "article_based", "auto"], default=None)
     ingest_p.add_argument("--force", action="store_true", help="Force re-indexing even if already indexed")
 
+    dir_p = subparsers.add_parser("ingest-dir", help="Ingest every supported file in a folder")
+    dir_p.add_argument(
+        "directory",
+        nargs="?",
+        default=None,
+        help=f"Folder to scan (defaults to DOCUMENTS_DIR='{settings.documents_dir}')",
+    )
+    dir_p.add_argument("--strategy", choices=["recursive", "parent_child", "article_based", "auto"], default=None)
+    dir_p.add_argument("--recursive", action="store_true", help="Include sub-folders")
+    dir_p.add_argument("--force", action="store_true", help="Force re-indexing even if already indexed")
+
     ask_p = subparsers.add_parser("ask", help="Query the RAG pipeline")
     ask_p.add_argument("question", help="Question to ask")
     ask_p.add_argument("--top-k", type=int, default=6)
@@ -154,6 +165,20 @@ def main() -> None:
         orchestrator = build_orchestrator()
         n = orchestrator.ingest_file(args.file_path, strategy=args.strategy, force=args.force)
         print(f"Ingested {n} chunks from '{args.file_path}'")
+    elif args.command == "ingest-dir":
+        orchestrator = build_orchestrator()
+        report = orchestrator.ingest_directory(
+            args.directory or settings.documents_dir,
+            strategy=args.strategy,
+            recursive=args.recursive,
+            force=args.force,
+        )
+        for item in report["files"]:
+            print(f"[{item['status']:<8}] {item['file']} -> {item['chunks']} chunks")
+        print(
+            f"\nIngested {report['ingested']} file(s), skipped {report['skipped']}, "
+            f"failed {report['failed']} — {report['total_chunks']} chunks total."
+        )
     elif args.command == "ask":
         orchestrator = build_orchestrator()
         resp = orchestrator.query(args.question, top_k=args.top_k)

@@ -12,12 +12,11 @@ Features:
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
 import time
 import uvicorn
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import (
     BackgroundTasks,
@@ -38,6 +37,7 @@ from rag_xper import __version__
 from rag_xper.bootstrap import build_orchestrator
 from rag_xper.config import settings
 from rag_xper.core.exceptions import RAGPipelineError
+from rag_xper.core.generation.rag_orchestrator import SUPPORTED_EXTENSIONS
 from rag_xper.core.jobs import JobStatus, job_manager
 from rag_xper.utils.logger import get_logger
 
@@ -124,11 +124,72 @@ class JobResponse(BaseModel):
     progress: int
     chunks_ingested: int
     error: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class DocumentInfo(BaseModel):
     filename: str
     chunk_count: int
+
+
+class FolderIngestRequest(BaseModel):
+    directory: Optional[str] = Field(
+        None,
+        description="Folder to scan. Must resolve inside DOCUMENTS_DIR. Defaults to DOCUMENTS_DIR itself.",
+    )
+    strategy: Optional[str] = Field(None, description="Chunking strategy override")
+    recursive: bool = Field(False, description="Include sub-folders")
+    force: bool = Field(False, description="Re-index files even if already indexed")
+
+
+# --- Shared validation helpers ---
+def _validate_extension(filename: Optional[str]) -> str:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(SUPPORTED_EXTENSIONS)}",
+        )
+    return suffix
+
+
+def _save_upload_to_temp(file: UploadFile, suffix: str) -> str:
+    """Stream an upload to disk, aborting once it exceeds MAX_UPLOAD_SIZE_MB."""
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    written = 0
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp_path = tmp.name
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_bytes:
+                tmp.close()
+                Path(tmp_path).unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,  # Content Too Large
+                    detail=f"File exceeds MAX_UPLOAD_SIZE_MB ({settings.max_upload_size_mb} MB).",
+                )
+            tmp.write(chunk)
+
+    return tmp_path
+
+
+def _resolve_documents_path(directory: Optional[str]) -> Path:
+    """Resolve a requested folder, refusing anything outside DOCUMENTS_DIR."""
+    base = Path(settings.documents_dir).resolve()
+    target = base if not directory else Path(directory).resolve()
+
+    if target != base and base not in target.parents:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Directory must be inside DOCUMENTS_DIR ('{base}').",
+        )
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {target}")
+    return target
 
 
 # --- Background Worker Task ---
@@ -149,6 +210,43 @@ def _process_async_ingestion(job_id: str, tmp_path: str, orig_filename: str, str
         _stats["total_errors"] += 1
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+def _process_folder_ingestion(
+    job_id: str,
+    directory: str,
+    strategy: Optional[str],
+    recursive: bool,
+    force: bool,
+) -> None:
+    """Background worker indexing every supported file staged in a server-side folder."""
+    try:
+        job_manager.update_progress(job_id, progress=5, status=JobStatus.PROCESSING)
+        orch = get_orchestrator()
+
+        def on_progress(done: int, total: int) -> None:
+            # Reserve the first 5% for startup and cap at 99% until the report is stored.
+            pct = 5 + int((done / total) * 94) if total else 99
+            job_manager.update_progress(job_id, progress=min(pct, 99), status=JobStatus.PROCESSING)
+
+        report = orch.ingest_directory(
+            directory,
+            strategy=strategy,
+            recursive=recursive,
+            force=force,
+            progress_callback=on_progress,
+        )
+
+        job_manager.complete_job(job_id, chunks_ingested=report["total_chunks"], details=report)
+        _stats["total_ingests"] += report["ingested"]
+        logger.info(
+            "Folder job '%s' completed: %d ingested, %d skipped, %d failed",
+            job_id, report["ingested"], report["skipped"], report["failed"],
+        )
+    except Exception as exc:
+        logger.error("Folder job '%s' failed: %s", job_id, exc)
+        job_manager.fail_job(job_id, str(exc))
+        _stats["total_errors"] += 1
 
 
 # --- Endpoints ---
@@ -201,22 +299,12 @@ async def ingest_document(
     force: bool = Form(False),
 ):
     """Synchronous ingestion for smaller documents."""
-    allowed_exts = {".pdf", ".md", ".txt", ".markdown", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
-    suffix = Path(file.filename).suffix.lower()
-
-    if suffix not in allowed_exts:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(list(allowed_exts))}",
-        )
+    suffix = _validate_extension(file.filename)
 
     orchestrator = get_orchestrator()
     tmp_path: Optional[str] = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = tmp.name
-
+        tmp_path = _save_upload_to_temp(file, suffix)
         n_chunks = orchestrator.ingest_file(tmp_path, strategy=strategy, force=force)
         _stats["total_ingests"] += 1
         return IngestResponse(
@@ -241,18 +329,8 @@ async def ingest_document_async(
     force: bool = Form(False),
 ):
     """Asynchronous ingestion for large documents with real-time job tracking."""
-    allowed_exts = {".pdf", ".md", ".txt", ".markdown", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
-    suffix = Path(file.filename).suffix.lower()
-
-    if suffix not in allowed_exts:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(list(allowed_exts))}",
-        )
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
+    suffix = _validate_extension(file.filename)
+    tmp_path = _save_upload_to_temp(file, suffix)
 
     job = job_manager.create_job(filename=file.filename, strategy=strategy or settings.chunking_strategy)
     background_tasks.add_task(_process_async_ingestion, job.job_id, tmp_path, file.filename, strategy, force)
@@ -260,6 +338,43 @@ async def ingest_document_async(
     return JobResponse(
         job_id=job.job_id,
         filename=file.filename,
+        status=job.status.value,
+        progress=job.progress,
+        chunks_ingested=0,
+    )
+
+
+@app.post(
+    "/v1/ingest/folder",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Ingestion"],
+    dependencies=[Depends(verify_api_key)],
+)
+async def ingest_folder(request: FolderIngestRequest, background_tasks: BackgroundTasks):
+    """Index documents already staged on the server under DOCUMENTS_DIR.
+
+    Nothing is uploaded: drop files into the folder (for example an EC2 bind mount)
+    and call this endpoint. Returns a job id to poll via /v1/jobs/{job_id}.
+    """
+    target = _resolve_documents_path(request.directory)
+
+    job = job_manager.create_job(
+        filename=str(target),
+        strategy=request.strategy or settings.chunking_strategy,
+    )
+    background_tasks.add_task(
+        _process_folder_ingestion,
+        job.job_id,
+        str(target),
+        request.strategy,
+        request.recursive,
+        request.force,
+    )
+
+    return JobResponse(
+        job_id=job.job_id,
+        filename=str(target),
         status=job.status.value,
         progress=job.progress,
         chunks_ingested=0,
@@ -279,6 +394,7 @@ async def get_job_status(job_id: str):
         progress=job.progress,
         chunks_ingested=job.chunks_ingested,
         error=job.error,
+        details=job.details,
     )
 
 
@@ -330,12 +446,16 @@ async def list_documents():
 @app.delete("/v1/documents/{filename}", tags=["Documents"], dependencies=[Depends(verify_api_key)])
 async def delete_document(filename: str):
     """Delete all indexed chunks belonging to a filename."""
-    orchestrator = get_orchestrator()
+    safe_name = Path(filename).name
     try:
-        removed = orchestrator._vector_store.delete_file(filename)
-        return {"filename": filename, "chunks_deleted": removed}
+        # Built inside the guard so configuration errors surface as HTTP responses.
+        orchestrator = get_orchestrator()
+        removed = orchestrator._vector_store.delete_file(safe_name)
+        return {"filename": safe_name, "chunks_deleted": removed}
+    except RAGPipelineError as exc:
+        raise HTTPException(status_code=503, detail=f"Service unavailable: {exc}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to delete document: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {exc}") from exc
 
 
 def run_api():

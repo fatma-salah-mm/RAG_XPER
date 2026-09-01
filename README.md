@@ -101,6 +101,18 @@ The BM25 component features Arabic orthographic normalization (unifying forms of
 
 For large files, the API provides non-blocking ingestion endpoints returning a unique `job_id`. Background workers execute the extraction, OCR, chunking, and embedding stages while exposing progress updates ($0\% \rightarrow 100\%$) via status polling endpoints.
 
+### Server-Side Folder Ingestion
+
+Documents staged on the server are indexed without being uploaded through the API. Files placed in `DOCUMENTS_DIR` (bind-mounted into the container at `/app/data/documents`) are indexed by a single request:
+
+```bash
+curl -X POST http://localhost:8000/v1/ingest/folder \
+  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"strategy": "auto", "recursive": true}'
+```
+
+The endpoint returns `202 Accepted` with a `job_id`. Polling `/v1/jobs/{job_id}` reports progress and, on completion, a per-file breakdown of ingested, skipped, and failed documents. A file that fails to parse is recorded in the report without aborting the remainder of the batch. Requested directories are resolved and rejected if they fall outside `DOCUMENTS_DIR`.
+
 ---
 
 ## Project Structure
@@ -141,12 +153,18 @@ RAG_XPER/
 ├── apps/
 │   └── gradio_ui/
 │       └── app.py                        # Web interface
+├── data/
+│   └── documents/                        # Server-side ingestion folder (gitignored)
 ├── tests/
 │   ├── test_api.py
 │   ├── test_bm25_arabic.py
 │   ├── test_chunkers.py
+│   ├── test_ingest_folder.py
 │   ├── test_orchestrator.py
 │   └── test_qdrant_search.py
+├── docs/
+│   ├── DEPLOYMENT_AWS.md
+│   └── PRODUCTION_PLAN.md
 ├── docker/
 │   ├── Dockerfile
 │   └── docker-compose.yml
@@ -174,8 +192,8 @@ RAG_XPER/
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/fatma-salah-mm/RAG_XPER.git
-   cd RAG_XPER
+   git clone https://github.com/xper-erp/rag.git
+   cd rag
    ```
 
 2. Create and activate a virtual environment:
@@ -226,6 +244,9 @@ Alternatively, invoke subcommands:
 # Ingest a document
 rag-xper ingest /path/to/document.pdf --strategy parent_child
 
+# Ingest every supported file in a folder (defaults to DOCUMENTS_DIR)
+rag-xper ingest-dir --recursive --strategy auto
+
 # Ask a question
 rag-xper ask "What are the contractual obligations under Article 12?"
 ```
@@ -262,6 +283,7 @@ docker compose -f docker/docker-compose.yml up -d
 | `GET` | `/metrics` | Operational metrics (queries, ingests, index size) | No |
 | `POST` | `/v1/ingest` | Synchronous document upload and indexing | Yes |
 | `POST` | `/v1/ingest/async` | Asynchronous upload returning `job_id` (202 Accepted) | Yes |
+| `POST` | `/v1/ingest/folder` | Index files staged under `DOCUMENTS_DIR`, returning `job_id` | Yes |
 | `GET` | `/v1/jobs/{job_id}` | Check status and progress percentage of an ingestion job | Yes |
 | `POST` | `/v1/ask` | Submit a question and retrieve an answer with sources | Yes |
 | `GET` | `/v1/documents` | List all indexed files and chunk counts | Yes |
@@ -305,7 +327,17 @@ The test suite covers:
 | `TOP_K` | `6` | Number of final chunks passed to LLM |
 | `FETCH_K` | `25` | Number of candidates fetched before fusion |
 | `API_KEYS` | — | Comma-separated authorized API keys (leave empty for open access) |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
+| `MAX_UPLOAD_SIZE_MB` | `50` | Maximum accepted upload size |
+| `DOCUMENTS_DIR` | `./data/documents` | Server-side folder scanned by `/v1/ingest/folder` |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+
+---
+
+## Documentation
+
+- [AWS EC2 Deployment Guide](docs/DEPLOYMENT_AWS.md) — provisioning, Docker Compose, TLS, backups, and operations
+- [Production Plan](docs/PRODUCTION_PLAN.md) — phase status, open gaps, and the hardening roadmap
 
 ---
 

@@ -1,3 +1,0 @@
-[console_scripts]
-rag-xper = rag_xper.cli.main:main
-rag-xper-api = rag_xper.api.app:run_api
