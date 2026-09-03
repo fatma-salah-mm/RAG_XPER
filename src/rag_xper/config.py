@@ -74,6 +74,18 @@ class Settings:
     # Files staged here are indexed by POST /v1/ingest/folder without being uploaded.
     documents_dir: str = os.getenv("DOCUMENTS_DIR", "./data/documents")
 
+    # --- MySQL Database Configuration ---
+    mysql_host: Optional[str] = os.getenv("MYSQL_HOST", None)
+    mysql_port: int = int(os.getenv("MYSQL_PORT", "3306"))
+    mysql_user: str = os.getenv("MYSQL_USER", "root")
+    mysql_password: str = os.getenv("MYSQL_PASSWORD", "")
+    mysql_database: str = os.getenv("MYSQL_DATABASE", "rag_xper_db")
+
+    # --- Caching Memory Configuration ---
+    cache_enabled: bool = os.getenv("CACHE_ENABLED", "true").lower() in ("true", "1", "yes")
+    cache_ttl_seconds: int = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
+    cache_max_size: int = int(os.getenv("CACHE_MAX_SIZE", "1000"))
+
     def validate(self) -> None:
         """Fail fast if required configuration is missing or unusable."""
         if self.llm_provider not in ("gemini", "ollama"):
