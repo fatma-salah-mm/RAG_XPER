@@ -75,18 +75,23 @@ def handle_query(question: str, history):
 
         # Format sources
         sources_md = "### 📚 المصادر المستند إليها:\n"
-        if response.sources:
+        if response and getattr(response, "sources", None):
             for i, src in enumerate(response.sources, 1):
-                src_name = Path(src.chunk.metadata.get("source", "doc")).name
-                page = src.chunk.metadata.get("page", 1)
-                stype = src.chunk.metadata.get("source_type", "text")
-                strat = src.chunk.metadata.get("strategy", "default")
-                sources_md += f"* **[{i}]** `{src_name}` (صفحة {page} | {stype} | {strat}) — **درجة التطابق:** `{src.score:.3f}`\n"
+                chunk = getattr(src, "chunk", None)
+                metadata = getattr(chunk, "metadata", {}) if chunk else {}
+                raw_src = metadata.get("source") or metadata.get("filename") or "doc"
+                src_name = Path(str(raw_src)).name
+                page = metadata.get("page", 1)
+                stype = metadata.get("source_type", "text")
+                strat = metadata.get("strategy", "default")
+                score = getattr(src, "score", 0.0)
+                score_str = f"{score:.3f}" if isinstance(score, (int, float)) else str(score)
+                sources_md += f"* **[{i}]** `{src_name}` (صفحة {page} | {stype} | {strat}) — **درجة التطابق:** `{score_str}`\n"
         else:
             sources_md += "*لا توجد مصادر مطابقة.*"
 
-        reasoning_text = response.reasoning or "تم التوليد المباشر بناءً على السياق المسترجع."
-        answer_text = response.answer
+        reasoning_text = (getattr(response, "reasoning", None) or "").strip() or "تم التوليد المباشر بناءً على السياق المسترجع."
+        answer_text = getattr(response, "answer", "")
 
         if isinstance(history, list) and (len(history) == 0 or isinstance(history[0], dict)):
             history.append({"role": "user", "content": question})
