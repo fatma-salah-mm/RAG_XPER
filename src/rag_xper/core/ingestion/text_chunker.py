@@ -171,61 +171,91 @@ class ParentChildChunker(BaseChunker):
 
 
 class ArticleBasedChunker(BaseChunker):
-    """Legal & Regulatory Chunker: Splits text on article/clause boundaries."""
+    """Legal & Regulatory Chunker: Splits text on article/clause boundaries across page boundaries."""
 
     _ARTICLE_PATTERN = re.compile(
         r"(?:^|\n)(?=(?:المادة\s+(?:[0-9]+|[\u0621-\u064A]+)|البند\s+(?:[0-9]+|[\u0621-\u064A]+)|الفصل\s+(?:[0-9]+|[\u0621-\u064A]+)|Article\s+[0-9]+|Section\s+[0-9]+|Clause\s+[0-9]+))",
         re.IGNORECASE | re.UNICODE,
     )
 
+    _ART_NUM_PATTERN = re.compile(
+        r"(?:المادة|البند|الفصل|Article|Section|Clause)\s+([0-9]+|[\u0621-\u064A]+)",
+        re.IGNORECASE | re.UNICODE,
+    )
+
+    _PAGE_MARKER_PATTERN = re.compile(r"\[\[PAGE\s+(\d+)\]\]")
+
     def __init__(self, fallback_max_size: int = 1500) -> None:
         self._fallback_max_size = fallback_max_size
         self._fallback_chunker = RecursiveChunker(chunk_size=fallback_max_size, chunk_overlap=150)
 
     def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
+        non_empty_pages = [p for p in pages if p.text and p.text.strip()]
+        if not non_empty_pages:
+            return []
+
+        src_path = non_empty_pages[0].source_path
+        src_type = non_empty_pages[0].source_type.value
+
+        # 1. Join pages with page boundary markers
+        full_doc_parts = []
+        for p in non_empty_pages:
+            full_doc_parts.append(f"[[PAGE {p.page_number}]]\n{p.text.strip()}")
+        joined_doc = "\n\n".join(full_doc_parts)
+
+        # 2. Split on article/clause boundaries across the entire document
+        raw_articles = self._ARTICLE_PATTERN.split(joined_doc)
+        clean_articles = [a.strip() for a in raw_articles if a.strip()]
+        if not clean_articles:
+            clean_articles = [joined_doc.strip()]
+
         chunks: List[Chunk] = []
-        for page in pages:
-            text = page.text.strip()
-            if not text:
+        for idx, art_text in enumerate(clean_articles):
+            # Extract first page marker
+            page_match = self._PAGE_MARKER_PATTERN.search(art_text)
+            approx_page = int(page_match.group(1)) if page_match else 1
+
+            # Extract article number
+            art_num_match = self._ART_NUM_PATTERN.search(art_text)
+            article_number = art_num_match.group(1) if art_num_match else str(idx + 1)
+
+            # Strip all page markers from the clean text
+            clean_text = self._PAGE_MARKER_PATTERN.sub("", art_text).strip()
+            if not clean_text:
                 continue
 
-            articles = self._ARTICLE_PATTERN.split(text)
-            clean_articles = [a.strip() for a in articles if a.strip()]
-
-            if not clean_articles:
-                clean_articles = [text]
-
-            for idx, art_text in enumerate(clean_articles):
-                if len(art_text) > self._fallback_max_size:
-                    sub_chunks = self._fallback_chunker._split_text(art_text)
-                    for s_idx, s_text in enumerate(sub_chunks):
-                        chunks.append(
-                            Chunk(
-                                chunk_id=f"{page.source_path}:p{page.page_number}:art{idx}:sub{s_idx}",
-                                text=s_text,
-                                metadata={
-                                    "source": page.source_path,
-                                    "page": page.page_number,
-                                    "source_type": page.source_type.value,
-                                    "strategy": "article_based",
-                                    "content_hash": compute_content_hash(s_text),
-                                },
-                            )
-                        )
-                else:
+            if len(clean_text) > self._fallback_max_size:
+                sub_chunks = self._fallback_chunker._split_text(clean_text)
+                for s_idx, s_text in enumerate(sub_chunks):
                     chunks.append(
                         Chunk(
-                            chunk_id=f"{page.source_path}:p{page.page_number}:art{idx}",
-                            text=art_text,
+                            chunk_id=f"{src_path}:art{article_number}:sub{s_idx}",
+                            text=s_text,
                             metadata={
-                                "source": page.source_path,
-                                "page": page.page_number,
-                                "source_type": page.source_type.value,
+                                "source": src_path,
+                                "page": approx_page,
+                                "source_type": src_type,
                                 "strategy": "article_based",
-                                "content_hash": compute_content_hash(art_text),
+                                "article_number": article_number,
+                                "content_hash": compute_content_hash(s_text),
                             },
                         )
                     )
+            else:
+                chunks.append(
+                    Chunk(
+                        chunk_id=f"{src_path}:art{article_number}:{idx}",
+                        text=clean_text,
+                        metadata={
+                            "source": src_path,
+                            "page": approx_page,
+                            "source_type": src_type,
+                            "strategy": "article_based",
+                            "article_number": article_number,
+                            "content_hash": compute_content_hash(clean_text),
+                        },
+                    )
+                )
         return chunks
 
 
@@ -238,7 +268,8 @@ class AutoDetectChunker(BaseChunker):
         self._settings = settings
 
     def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
-        sample_text = " ".join([p.text[:500] for p in pages[:5]]).lower()
+        # Inspect up to 15 pages in full to catch legal patterns beyond cover page
+        sample_text = " ".join([p.text for p in pages[:15]]).lower()
         is_legal = any(kw in sample_text for kw in self._LEGAL_KEYWORDS)
 
         if is_legal:

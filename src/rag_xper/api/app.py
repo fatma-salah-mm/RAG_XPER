@@ -74,6 +74,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import uuid
+from fastapi import Request
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = req_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = req_id
+    return response
+
 _orchestrator = None
 _start_time = time.time()
 _stats = {"total_queries": 0, "total_ingests": 0, "total_errors": 0}
@@ -87,28 +99,39 @@ def get_orchestrator():
     return _orchestrator
 
 
+import secrets
+
 # --- API Key Security Dependency ---
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> Optional[str]:
-    """Validate API key if configured in settings."""
-    if not settings.api_keys:
+    """Validate API key using constant-time comparison, failing closed if auth required."""
+    if not settings.require_auth and not settings.api_keys:
         return api_key
 
-    if not api_key or api_key not in settings.api_keys:
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key in 'X-API-Key' header.",
+            detail="Missing API key in 'X-API-Key' header.",
+        )
+
+    is_valid = any(secrets.compare_digest(api_key, valid_key) for valid_key in settings.api_keys)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key in 'X-API-Key' header.",
         )
     return api_key
 
 
 # --- Pydantic Schemas ---
 class AskRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Question text to answer from documents")
-    top_k: Optional[int] = Field(6, ge=1, le=50, description="Number of retrieved chunks")
+    question: str = Field(..., min_length=1, max_length=2000, description="Question text to answer from documents")
+    top_k: Optional[int] = Field(6, ge=1, le=10, description="Number of retrieved chunks (max 10)")
     session_id: Optional[str] = Field(None, description="Optional chat session ID for logging")
+    filename: Optional[str] = Field(None, description="Optional filter to retrieve only from this filename")
+    article_number: Optional[str] = Field(None, description="Optional filter to retrieve only from this article")
 
 
 class SourceOut(BaseModel):
@@ -237,7 +260,7 @@ def _process_async_ingestion(
         orch = get_orchestrator()
 
         job_manager.update_progress(job_id, progress=50, status=JobStatus.PROCESSING)
-        n_chunks = orch.ingest_file(tmp_path, strategy=strategy, force=force)
+        n_chunks = orch.ingest_file(tmp_path, strategy=strategy, force=force, original_filename=orig_filename)
 
         # Register in MySQL Books catalog
         register_book(
@@ -304,10 +327,22 @@ async def health_check():
 
 @app.get("/ready", tags=["Health & Observability"])
 async def readiness_check():
-    """Readiness probe verifying vector store connectivity."""
+    """Readiness probe verifying vector store connectivity and collection dimension."""
     try:
         orch = get_orchestrator()
-        return {"status": "ready", "vector_store": settings.vector_store_type}
+        if hasattr(orch._vector_store, "_client"):
+            client = orch._vector_store._client
+            col_name = getattr(orch._vector_store, "_collection_name", settings.collection_name)
+            col_info = client.get_collection(collection_name=col_name)
+            dim = col_info.config.params.vectors.size
+            if dim != settings.embedding_dim:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Collection dimension mismatch: Qdrant={dim}, Settings={settings.embedding_dim}. Change COLLECTION_NAME and re-ingest.",
+                )
+        return {"status": "ready", "vector_store": settings.vector_store_type, "collection": settings.collection_name}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Service not ready: {exc}")
 
@@ -358,7 +393,12 @@ async def ingest_document(
 
     orchestrator = get_orchestrator()
     try:
-        n_chunks = orchestrator.ingest_file(tmp_path, strategy=strategy, force=force)
+        n_chunks = orchestrator.ingest_file(
+            tmp_path,
+            strategy=strategy,
+            force=force,
+            original_filename=file.filename,
+        )
         register_book(
             title=title or file.filename,
             author=author,
@@ -515,7 +555,12 @@ async def ask_question(request: AskRequest):
     # 2. Query Orchestrator
     orchestrator = get_orchestrator()
     try:
-        response: RAGResponse = orchestrator.query(request.question, top_k=effective_top_k)
+        response: RAGResponse = orchestrator.query(
+            request.question,
+            top_k=effective_top_k,
+            filter_filename=request.filename,
+            filter_article=request.article_number,
+        )
         _stats["total_queries"] += 1
         elapsed_ms = round((time.time() - start_t) * 1000, 2)
 
@@ -571,14 +616,16 @@ async def list_documents():
     doc_counts: Dict[str, int] = {}
     try:
         orch = get_orchestrator()
-        if hasattr(orch._vector_store, "_bm25"):
+        if hasattr(orch._vector_store, "get_indexed_documents"):
+            doc_counts = orch._vector_store.get_indexed_documents()
+        elif hasattr(orch._vector_store, "_bm25"):
             for c in orch._vector_store._bm25._chunks:
-                src = Path(c.metadata.get("source", "doc")).name
+                src = c.metadata.get("filename") or Path(c.metadata.get("source", "doc")).name
                 doc_counts[src] = doc_counts.get(src, 0) + 1
     except Exception:
         pass
 
-    return [DocumentInfo(filename=fn, chunk_count=cnt) for fn, cnt in doc_counts.items()]
+    return [DocumentInfo(filename=fn, chunk_count=cnt) for fn, cnt in sorted(doc_counts.items())]
 
 
 @app.delete("/v1/documents/{filename}", tags=["Documents"], dependencies=[Depends(verify_api_key)])
@@ -609,7 +656,7 @@ if ui_dir.exists():
 
 def run_api():
     """Console script launcher: rag-xper-api"""
-    uvicorn.run("rag_xper.api.app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("rag_xper.api.app:app", host="0.0.0.0", port=8000)
 
 
 if __name__ == "__main__":

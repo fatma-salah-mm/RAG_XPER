@@ -125,12 +125,15 @@ class QdrantStoreManager(BaseVectorStore):
             logger.warning("Could not sync BM25 index from Qdrant: %s", exc)
 
     def is_file_ingested(self, file_path: str, content_hash: Optional[str] = None) -> bool:
-        """Filter-based deduplication checking either content_hash or normalized file path."""
+        """Filter-based deduplication checking either file_hash, doc_id, or normalized filename."""
         try:
-            # Check content hash if provided
+            # 1. Check content/file hash if provided
             if content_hash:
                 hash_filter = qmodels.Filter(
-                    must=[qmodels.FieldCondition(key="content_hash", match=qmodels.MatchValue(value=content_hash))]
+                    should=[
+                        qmodels.FieldCondition(key="file_hash", match=qmodels.MatchValue(value=content_hash)),
+                        qmodels.FieldCondition(key="content_hash", match=qmodels.MatchValue(value=content_hash)),
+                    ]
                 )
                 res, _ = self._client.scroll(
                     collection_name=self._collection_name,
@@ -141,12 +144,14 @@ class QdrantStoreManager(BaseVectorStore):
                 if res:
                     return True
 
-            # Check filename / source
+            # 2. Check filename / doc_id / source
             norm_name = Path(file_path).name.lower()
             src_filter = qmodels.Filter(
                 should=[
+                    qmodels.FieldCondition(key="filename", match=qmodels.MatchValue(value=norm_name)),
                     qmodels.FieldCondition(key="source", match=qmodels.MatchValue(value=file_path)),
                     qmodels.FieldCondition(key="source", match=qmodels.MatchValue(value=norm_name)),
+                    qmodels.FieldCondition(key="doc_id", match=qmodels.MatchValue(value=file_path)),
                 ]
             )
             records, _ = self._client.scroll(
@@ -158,10 +163,14 @@ class QdrantStoreManager(BaseVectorStore):
             if records:
                 return True
 
-            # Check BM25 chunks
+            # 3. Check BM25 chunks
             for c in self._bm25._chunks:
-                src = Path(c.metadata.get("source", "")).name.lower()
-                if src == norm_name:
+                c_fn = c.metadata.get("filename", "").lower()
+                c_src = Path(c.metadata.get("source", "")).name.lower()
+                c_hash = c.metadata.get("file_hash", "") or c.metadata.get("content_hash", "")
+                if content_hash and c_hash == content_hash:
+                    return True
+                if norm_name in (c_fn, c_src):
                     return True
 
             return False
@@ -303,8 +312,11 @@ class QdrantStoreManager(BaseVectorStore):
         try:
             flt = qmodels.Filter(
                 should=[
+                    qmodels.FieldCondition(key="filename", match=qmodels.MatchValue(value=norm_name)),
                     qmodels.FieldCondition(key="source", match=qmodels.MatchValue(value=file_path)),
                     qmodels.FieldCondition(key="source", match=qmodels.MatchValue(value=norm_name)),
+                    qmodels.FieldCondition(key="doc_id", match=qmodels.MatchValue(value=file_path)),
+                    qmodels.FieldCondition(key="file_hash", match=qmodels.MatchValue(value=file_path)),
                 ]
             )
             self._client.delete(collection_name=self._collection_name, points_selector=flt)
@@ -313,3 +325,33 @@ class QdrantStoreManager(BaseVectorStore):
             return bm25_deleted
         except Exception as exc:
             raise VectorDBConnectionError(f"Failed to delete file '{file_path}' from Qdrant: {exc}") from exc
+
+    def get_indexed_documents(self) -> Dict[str, int]:
+        """Fetch document counts accurately from Qdrant scroll and BM25."""
+        counts: Dict[str, int] = {}
+        try:
+            offset = None
+            while True:
+                records, next_offset = self._client.scroll(
+                    collection_name=self._collection_name,
+                    limit=100,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                for rec in records:
+                    payload = rec.payload or {}
+                    fn = payload.get("filename") or Path(payload.get("source", "doc")).name
+                    counts[fn] = counts.get(fn, 0) + 1
+                if next_offset is None:
+                    break
+                offset = next_offset
+        except Exception:
+            pass
+
+        if not counts and hasattr(self, "_bm25"):
+            for c in self._bm25._chunks:
+                fn = c.metadata.get("filename") or Path(c.metadata.get("source", "doc")).name
+                counts[fn] = counts.get(fn, 0) + 1
+
+        return counts

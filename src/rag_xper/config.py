@@ -28,7 +28,14 @@ class Settings:
     gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 
     # --- Embedding Dimension (Phase 1 auto-parameterization) ---
-    embedding_dim: int = int(os.getenv("EMBEDDING_DIM", "3072" if os.getenv("LLM_PROVIDER", "gemini") == "gemini" else "768"))
+    embedding_dim: int = 0
+
+    def __post_init__(self) -> None:
+        dim_env = os.getenv("EMBEDDING_DIM", "").strip()
+        if dim_env.isdigit() and int(dim_env) > 0:
+            object.__setattr__(self, "embedding_dim", int(dim_env))
+        elif self.embedding_dim == 0:
+            object.__setattr__(self, "embedding_dim", 3072 if self.llm_provider == "gemini" else 768)
 
     # --- LLM (Ollama -- fully local, no API key) ---
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -53,7 +60,7 @@ class Settings:
     collection_name: str = os.getenv("COLLECTION_NAME", "rag_xper_documents")
 
     # --- Modular Chunking Strategy ---
-    chunking_strategy: str = os.getenv("CHUNKING_STRATEGY", "recursive").lower()
+    chunking_strategy: str = os.getenv("CHUNKING_STRATEGY", "auto").lower()
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "1000"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "150"))
     parent_chunk_size: int = int(os.getenv("PARENT_CHUNK_SIZE", "1500"))
@@ -64,8 +71,10 @@ class Settings:
     hybrid_alpha: float = float(os.getenv("HYBRID_ALPHA", "0.5"))
     top_k: int = int(os.getenv("TOP_K", "6"))
     fetch_k: int = int(os.getenv("FETCH_K", "25"))
+    min_retrieval_score: float = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.0"))
 
-    # --- API Security (Phase 2) ---
+    # --- API Security (Phase 2 & Wave 1) ---
+    require_auth: bool = os.getenv("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
     api_keys: tuple = tuple([k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()])
     max_upload_size_mb: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
     cors_origins: tuple = tuple([o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()])
@@ -95,6 +104,10 @@ class Settings:
         if self.llm_provider == "gemini" and not self.gemini_api_key:
             raise ConfigurationError(
                 "GEMINI_API_KEY is not set in .env. Please set GEMINI_API_KEY."
+            )
+        if self.require_auth and not self.api_keys:
+            raise ConfigurationError(
+                "REQUIRE_AUTH is true but API_KEYS is empty. Please set API_KEYS in .env."
             )
         if self.chunk_overlap >= self.chunk_size:
             raise ConfigurationError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE.")
