@@ -24,19 +24,7 @@ class OCREngine:
         self._languages = languages or ["en", "ar"]
         self._reader = None
         self._paddle = None
-
-        if self._engine_type == "easyocr":
-            try:
-                import easyocr
-                self._reader = easyocr.Reader(self._languages, gpu=False)
-            except Exception as exc:
-                logger.warning("Could not initialize EasyOCR: %s", exc)
-        elif self._engine_type == "paddleocr":
-            try:
-                from paddleocr import PaddleOCR
-                self._paddle = PaddleOCR(use_angle_cls=True, lang="ar")
-            except Exception as exc:
-                logger.warning("Could not initialize PaddleOCR: %s", exc)
+        # Lazy initialization: weights are only loaded on first image extraction call
 
     def extract_text(self, image_bytes: bytes) -> str:
         """Run OCR on in-memory image bytes."""
@@ -69,7 +57,8 @@ class OCREngine:
             if self._paddle is None:
                 try:
                     from paddleocr import PaddleOCR
-                    self._paddle = PaddleOCR(use_angle_cls=True, lang="ar")
+                    paddle_lang = "ar" if "ar" in self._languages else (self._languages[0] if self._languages else "en")
+                    self._paddle = PaddleOCR(use_angle_cls=True, lang=paddle_lang)
                 except Exception as exc:
                     raise OCRExtractionError(f"PaddleOCR not available: {exc}") from exc
 

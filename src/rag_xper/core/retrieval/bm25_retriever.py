@@ -209,7 +209,9 @@ class BM25Retriever:
         removed = 0
         for chunk, toks, dlen in zip(self._chunks, self._corpus_tokens, self._doc_lens):
             chunk_src = Path(chunk.metadata.get("source", "")).name.lower()
-            if chunk_src == norm_target:
+            chunk_fn = chunk.metadata.get("filename", "").lower()
+            chunk_doc = chunk.metadata.get("doc_id", "").lower()
+            if norm_target in (chunk_src, chunk_fn, chunk_doc):
                 removed += 1
             else:
                 new_chunks.append(chunk)

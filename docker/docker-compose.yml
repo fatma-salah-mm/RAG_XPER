@@ -5,9 +5,9 @@ services:
     image: qdrant/qdrant:latest
     container_name: rag_xper_qdrant
     restart: unless-stopped
-    ports:
-      - "6333:6333"
-      - "6334:6334"
+    expose:
+      - "6333"
+      - "6334"
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
@@ -17,8 +17,8 @@ services:
     image: redis:7-alpine
     container_name: rag_xper_redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
 
   api:
     build:
@@ -30,7 +30,7 @@ services:
       - qdrant
       - redis
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - LLM_PROVIDER=gemini
       - GEMINI_API_KEY=${GEMINI_API_KEY}

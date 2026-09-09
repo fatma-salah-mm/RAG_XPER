@@ -1,6 +1,6 @@
 # RAG_XPER: Enterprise Multi-Modal Retrieval-Augmented Generation Pipeline
 
-RAG_XPER is an enterprise-grade document question-answering system designed for Arabic and English documents (PDFs, Markdown, plain text, and scanned images). Built on a modular, decoupled architecture, it integrates Qdrant vector search, persistent BM25 lexical retrieval with Reciprocal Rank Fusion (RRF), optical character recognition (OCR), and Chain-of-Thought (CoT) reasoning via large language models.
+RAG_XPER is an enterprise-grade document question-answering system designed for Arabic and English documents (PDFs, Markdown, plain text, and scanned images). Built on a modular, decoupled architecture, it integrates Qdrant vector search, persistent BM25 lexical retrieval with Reciprocal Rank Fusion (RRF), optical character recognition (OCR), an In-Memory Query Cache layer, a MySQL document catalog, and Chain-of-Thought (CoT) reasoning via large language models.
 
 ---
 
@@ -9,34 +9,39 @@ RAG_XPER is an enterprise-grade document question-answering system designed for 
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
 - [Key Capabilities](#key-capabilities)
-  - [Modular Chunking Strategies](#modular-chunking-strategies)
+  - [Cross-Page Legal Chunking](#cross-page-legal-chunking)
   - [Hybrid Retrieval Engine](#hybrid-retrieval-engine)
-  - [Multi-Modal Ingestion](#multi-modal-ingestion)
-  - [Security and Rate Limiting](#security-and-rate-limiting)
-  - [Asynchronous Job Processing](#asynchronous-job-processing)
+  - [In-Memory Query Cache Layer](#in-memory-query-cache-layer)
+  - [MySQL Document and Query Catalog](#mysql-document-and-query-catalog)
+  - [Enterprise Security and Document Identity](#enterprise-security-and-document-identity)
+  - [Asynchronous Background Ingestion](#asynchronous-background-ingestion)
 - [Project Structure](#project-structure)
 - [Installation and Setup](#installation-and-setup)
 - [Execution Modes](#execution-modes)
-  - [1. Web Interface (Gradio)](#1-web-interface-gradio)
-  - [2. Command-Line Interface (CLI)](#2-command-line-interface-cli)
-  - [3. REST API Backend (FastAPI)](#3-rest-api-backend-fastapi)
-  - [4. Containerized Deployment (Docker Compose)](#4-containerized-deployment-docker-compose)
+  - [1. Enterprise Web Dashboard](#1-enterprise-web-dashboard)
+  - [2. REST API Backend (FastAPI)](#2-rest-api-backend-fastapi)
+  - [3. Developer Web Interface (Gradio)](#3-developer-web-interface-gradio)
+  - [4. Command-Line Interface (CLI)](#4-command-line-interface-cli)
+  - [5. Containerized Deployment (Docker Compose)](#5-containerized-deployment-docker-compose)
 - [API Reference](#api-reference)
 - [Testing and Quality Assurance](#testing-and-quality-assurance)
+- [Retrieval Quality Benchmark](#retrieval-quality-benchmark)
 - [Configuration Reference](#configuration-reference)
 
 ---
 
 ## Overview
 
-Traditional RAG pipelines often struggle with scanned multi-page documents, Arabic grammatical variations, legal structure boundaries, and redundant embedding costs. RAG_XPER addresses these challenges by implementing:
+Traditional RAG pipelines often struggle with scanned multi-page documents, Arabic grammatical variations, legal structure boundaries across page margins, and redundant embedding costs. RAG_XPER addresses these challenges by implementing:
 
-- Dual vector store support (Qdrant Server/Embedded and ChromaDB).
+- Dual vector store architecture (Qdrant Server/Embedded and ChromaDB).
 - Persistent BM25 index with Arabic normalization, light stemming, and ordinal expansion.
-- Content-hash deduplication (SHA-256) to eliminate duplicate vector embedding operations.
-- Four distinct chunking strategies tailored to document structure.
+- Document identity deduplication (`doc_id`, `file_hash`) preventing redundant vector embedding.
+- Cross-page article chunking that extracts complete legal articles spanning multiple pages.
+- Sub-5ms response acceleration via a normalized in-memory Query Cache.
+- Relational persistence in MySQL (`rag_xper_db`) with SQLite fallback.
+- Fail-closed security with constant-time API key verification (`secrets.compare_digest`).
 - Background asynchronous ingestion jobs with real-time status tracking.
-- Enterprise API security with token-based authentication and request validation.
 
 ---
 
@@ -45,7 +50,8 @@ Traditional RAG pipelines often struggle with scanned multi-page documents, Arab
 ```text
 +-----------------------------------------------------------------------------------+
 |                                  Client Layer                                     |
-|           FastAPI REST API     |     Gradio Web UI     |     Terminal CLI         |
+|     XPER Web Dashboard     |     FastAPI REST API     |     Terminal CLI          |
+|      (apps/web_dashboard)  |      (src/rag_xper/api)  |     (src/rag_xper/cli)    |
 +------------------------------------------+----------------------------------------+
                                            |
 +------------------------------------------v----------------------------------------+
@@ -57,23 +63,31 @@ Traditional RAG pipelines often struggle with scanned multi-page documents, Arab
 |     Ingestion Layer     |  |     Retrieval Layer     |  |    Generation Layer     |
 | - PyMuPDF / Text Parser |  | - Qdrant (Rust Vector)  |  | - Gemini / Ollama LLM   |
 | - OCR (EasyOCR/Paddle)  |  | - Persisted BM25 Index  |  | - Chain-of-Thought (CoT)|
-| - Modular Chunkers      |  | - Shared RRF Fusion     |  | - Parent-Child Resolver |
-| - SHA-256 Hash Dedup    |  | - Payload Filtering     |  | - Source Attribution    |
-+-------------------------+  +-------------------------+  +-------------------------+
+| - Cross-Page Chunker    |  | - Shared RRF Fusion     |  | - Strict Citation Engine|
+| - SHA-256 Hash Dedup    |  | - Metadata Filtering    |  | - In-Memory Query Cache |
++--------------------+----+  +-------------+-----------+  +----+--------------------+
+                     |                     |                   |
+                     +---------------------+-------------------+
+                                           |
++------------------------------------------v----------------------------------------+
+|                              Persistence & Storage Layer                          |
+|         Qdrant Storage     |     MySQL Database     |     BM25 Disk Pickle        |
+|      (storage/qdrant_db)   |    (rag_xper_db)       |    (storage/bm25_index.pkl) |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
 ## Key Capabilities
 
-### Modular Chunking Strategies
+### Cross-Page Legal Chunking
 
-The ingestion engine supports four strategy patterns accessible via configuration or per-request parameters:
+The ingestion engine supports modular strategies configured via environment or per-request parameters:
 
-1. **Recursive Chunking (`recursive`)**: Standard sliding window with natural paragraph and sentence boundary preservation. Best suited for general literature and reports.
-2. **Parent-Child Chunking (`parent_child`)**: Small child chunks (e.g., 300 characters) are indexed for precise semantic search. Upon retrieval, the complete parent chunk (e.g., 1500 characters) is resolved and supplied to the LLM context.
-3. **Article-Based Chunking (`article_based`)**: Uses regular expression boundaries to split legal codes, regulations, and contracts strictly along article and clause headings (e.g., `المادة 1`, `Article 1`, `Section 1`).
-4. **Auto-Detection (`auto`)**: Analyzes document heuristics across the initial pages to dynamically assign either article-based or recursive chunking.
+1. **Auto-Detection (`auto`) [Default]**: Inspects document contents across up to 15 pages to dynamically select either article-based or recursive chunking.
+2. **Article-Based Chunking (`article_based`)**: Joins multi-page documents with boundary markers and splits text strictly along legal article and clause boundaries (e.g., `المادة 1`, `Article 1`, `Section 1`). Articles spanning across page breaks are kept intact in a single chunk with extracted `article_number` metadata.
+3. **Parent-Child Chunking (`parent_child`)**: Small child chunks (e.g., 300 characters) are indexed for precise semantic search. Upon retrieval, the complete parent chunk (e.g., 1500 characters) is resolved and supplied to the LLM context.
+4. **Recursive Chunking (`recursive`)**: Standard sliding window with natural paragraph and sentence boundary preservation.
 
 ### Hybrid Retrieval Engine
 
@@ -83,35 +97,33 @@ $$\text{RRF Score} = \alpha \cdot \frac{1}{k + \text{Rank}_{\text{Dense}} + 1} +
 
 The BM25 component features Arabic orthographic normalization (unifying forms of Alef, Yaa, Taa Marbuta), diacritic stripping, light prefix/suffix stemming, and number-to-ordinal expansion (e.g., mapping numeric digits to textual Arabic words like `70` to `السبعون` and `سبعين`).
 
-### Multi-Modal Ingestion
+### In-Memory Query Cache Layer
 
-- **Digital PDFs**: High-throughput native text layer extraction via PyMuPDF.
-- **Scanned Documents**: Automatic fallback to high-resolution rasterization ($2.5\times$ zoom matrix) and EasyOCR/PaddleOCR processing with paragraph line grouping.
-- **Markdown & Plain Text**: Direct file ingestion without OCR overhead.
-- **Images**: Direct optical extraction for standalone PNG, JPG, and WEBP files.
+A high-performance LRU cache layer intercepts incoming questions before execution:
+- Normalizes Arabic variations (Alef variants, Taa Marbuta, diacritics) so spelling variants hit the same cache entry.
+- Sub-5ms response time on cache hits without consuming LLM API quotas.
+- Automatically invalidated upon new document ingestion or document deletion.
 
-### Security and Rate Limiting
+### MySQL Document and Query Catalog
 
-- Configurable API key authentication via the `X-API-Key` request header.
-- Strict MIME-type and extension whitelisting.
-- Payload size validation (configurable up to 50 MB).
-- Cross-Origin Resource Sharing (CORS) policy enforcement.
+The system provides a relational schema in `rag_xper_db` (UTF-8 Multi-byte `utf8mb4_unicode_ci`):
+- **`books` Table**: Catalogs document titles, authors, categories, file paths, chunk counts, and indexing strategies.
+- **`query_logs` Table**: Records chat sessions, questions, CoT reasoning steps, answers, retrieved sources, execution latencies, and cache status.
+- Resilient fallback: Automatically connects to local SQLite storage if MySQL is not configured.
 
-### Asynchronous Job Processing
+### Enterprise Security and Document Identity
 
-For large files, the API provides non-blocking ingestion endpoints returning a unique `job_id`. Background workers execute the extraction, OCR, chunking, and embedding stages while exposing progress updates ($0\% \rightarrow 100\%$) via status polling endpoints.
+- Constant-time API key verification using `secrets.compare_digest`.
+- Fail-closed initialization: When `REQUIRE_AUTH=true`, the service refuses to start if `API_KEYS` is empty.
+- Stable document identity: `doc_id` generated via deterministic `uuid5(filename + file_bytes_hash)`.
+- Synchronized deletion: Deleting a document removes its points from Qdrant, BM25, and MySQL simultaneously.
+- Docker ports hardened: Qdrant (6333/6334) and Redis (6379) isolated within the internal network.
 
-### Server-Side Folder Ingestion
+### Asynchronous Background Ingestion
 
-Documents staged on the server are indexed without being uploaded through the API. Files placed in `DOCUMENTS_DIR` (bind-mounted into the container at `/app/data/documents`) are indexed by a single request:
-
-```bash
-curl -X POST http://localhost:8000/v1/ingest/folder \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"strategy": "auto", "recursive": true}'
-```
-
-The endpoint returns `202 Accepted` with a `job_id`. Polling `/v1/jobs/{job_id}` reports progress and, on completion, a per-file breakdown of ingested, skipped, and failed documents. A file that fails to parse is recorded in the report without aborting the remainder of the batch. Requested directories are resolved and rejected if they fall outside `DOCUMENTS_DIR`.
+- Ingestion of large documents runs via an in-process background worker queue.
+- Progress tracked in increments (0% to 100%) through polling `/v1/jobs/{job_id}`.
+- Directory scanning: Ingest entire folders via `POST /v1/ingest/folder` with batch failure isolation.
 
 ---
 
@@ -119,64 +131,34 @@ The endpoint returns `202 Accepted` with a `job_id`. Polling `/v1/jobs/{job_id}`
 
 ```text
 RAG_XPER/
-├── src/
-│   └── rag_xper/
-│       ├── __init__.py
-│       ├── config.py                 # Immutable dataclass settings
-│       ├── bootstrap.py              # Single decoupled wiring entrypoint
-│       ├── core/
-│       │   ├── ingestion/
-│       │   │   ├── document_extractor.py
-│       │   │   ├── ocr_engine.py
-│       │   │   └── text_chunker.py
-│       │   ├── retrieval/
-│       │   │   ├── base_vector_store.py
-│       │   │   ├── bm25_retriever.py
-│       │   │   ├── hybrid_fusion.py      # Unified RRF implementation
-│       │   │   ├── qdrant_store_manager.py
-│       │   │   └── vector_store_manager.py
-│       │   ├── generation/
-│       │   │   ├── llm_interface.py
-│       │   │   └── rag_orchestrator.py
-│       │   ├── jobs.py                   # Async job manager
-│       │   ├── models.py                 # Typed domain models
-│       │   └── exceptions.py             # Custom exception hierarchy
-│       ├── api/
-│       │   ├── __init__.py
-│       │   └── app.py                    # Production FastAPI application
-│       ├── cli/
-│       │   ├── __init__.py
-│       │   └── main.py                   # Interactive CLI application
-│       └── utils/
-│           ├── __init__.py
-│           └── logger.py                 # Structured logger
 ├── apps/
-│   └── gradio_ui/
-│       └── app.py                        # Web interface
-├── data/
-│   └── documents/                        # Server-side ingestion folder (gitignored)
-├── tests/
-│   ├── test_api.py
-│   ├── test_bm25_arabic.py
-│   ├── test_chunkers.py
-│   ├── test_ingest_folder.py
-│   ├── test_orchestrator.py
-│   └── test_qdrant_search.py
-├── docs/
-│   ├── DEPLOYMENT_AWS.md
-│   └── PRODUCTION_PLAN.md
+│   ├── web_dashboard/           # Enterprise XPER Web Interface (HTML, CSS, JS)
+│   └── gradio_ui/               # Developer exploration UI
+├── src/
+│   └── rag_xper/                # Core production Python package
+│       ├── api/
+│       │   └── app.py           # FastAPI application and route handlers
+│       ├── cli/
+│       │   └── main.py          # Terminal CLI implementation
+│       ├── core/
+│       │   ├── cache.py         # In-Memory Query Cache with Arabic normalization
+│       │   ├── db/              # MySQL models, session, and CRUD service
+│       │   ├── generation/      # LLM interfaces and RAG orchestrator
+│       │   ├── ingestion/       # Extractors, OCR engine, and text chunkers
+│       │   └── retrieval/       # BM25 retriever, Qdrant store, and RRF fusion
+│       ├── utils/
+│       │   └── logger.py        # Structured JSON and standard logging
+│       ├── bootstrap.py         # Component factory wiring
+│       └── config.py            # Centralized settings and validation
+├── tests/                       # 55 automated unit, stress, and security tests
+│   └── eval/                    # Retrieval evaluation suite and dataset
+├── scripts/
+│   └── init_mysql.sql           # MySQL database initialization script
 ├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── pyproject.toml
-├── requirements.txt
-├── .env.example
-├── .dockerignore
-├── .gitignore
-└── README.md
+│   ├── Dockerfile               # Multi-stage container definition with OCR
+│   └── docker-compose.yml       # Production composition with network isolation
+├── pyproject.toml               # Package configuration and dependencies
+└── README.md                    # Technical documentation
 ```
 
 ---
@@ -185,162 +167,239 @@ RAG_XPER/
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.10, 3.11, or 3.12
 - Git
+- Qdrant (optional, embedded storage supported natively)
+- MySQL 8.0+ (optional, SQLite fallback supported)
 
-### Installation Steps
+### Step 1: Clone and Environment Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/xper-erp/rag.git
-   cd rag
-   ```
+```bash
+git clone https://github.com/xper-erp/rag.git
+cd rag
+python -m venv .venv
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   # On Windows:
-   .venv\Scripts\activate
-   # On Linux/macOS:
-   source .venv/bin/activate
-   ```
+# On Linux/macOS:
+source .venv/bin/activate
 
-3. Install the package in editable mode:
-   ```bash
-   pip install -e .
-   ```
+# On Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+```
 
-4. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and set your `GEMINI_API_KEY` (or configure local Ollama).
+### Step 2: Install Package with Dependencies
+
+```bash
+pip install --upgrade pip
+pip install -e ".[all]"
+```
+
+### Step 3: Environment Configuration
+
+Copy the sample environment file and configure credentials:
+
+```bash
+cp .env.example .env
+```
+
+Key environment variables:
+
+```ini
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.5-flash-lite
+EMBEDDING_DIM=3072
+
+VECTOR_STORE_TYPE=qdrant
+QDRANT_STORAGE_PATH=./storage/qdrant_db
+COLLECTION_NAME=rag_xper_documents
+
+CHUNKING_STRATEGY=auto
+USE_HYBRID_SEARCH=true
+HYBRID_ALPHA=0.5
+TOP_K=6
+
+REQUIRE_AUTH=false
+API_KEYS=secret_key_1,secret_key_2
+CACHE_ENABLED=true
+```
 
 ---
 
 ## Execution Modes
 
-### 1. Web Interface (Gradio)
+### 1. Enterprise Web Dashboard
 
-Launch the interactive web UI:
-
-```bash
-python apps/gradio_ui/app.py
-```
-
-Access the interface at `http://localhost:7861`.
-
-### 2. Command-Line Interface (CLI)
-
-Run the CLI tool directly via the registered console script:
-
-```bash
-rag-xper
-```
-
-Alternatively, invoke subcommands:
-
-```bash
-# Ingest a document
-rag-xper ingest /path/to/document.pdf --strategy parent_child
-
-# Ingest every supported file in a folder (defaults to DOCUMENTS_DIR)
-rag-xper ingest-dir --recursive --strategy auto
-
-# Ask a question
-rag-xper ask "What are the contractual obligations under Article 12?"
-```
-
-### 3. REST API Backend (FastAPI)
-
-Launch the production REST API server:
+Launch the FastAPI application:
 
 ```bash
 rag-xper-api
 ```
 
-- Interactive Documentation (Swagger UI): `http://localhost:8000/docs`
-- Health Endpoint: `http://localhost:8000/health`
-- Metrics Endpoint: `http://localhost:8000/metrics`
+Open a web browser and navigate to:
+- **Web Dashboard:** `http://localhost:8000/ui`
+- **API Documentation (Swagger):** `http://localhost:8000/docs`
 
-### 4. Containerized Deployment (Docker Compose)
+The Web Dashboard features:
+- Arabic Right-To-Left (RTL) interface with English language toggle.
+- Conversational interface with collapsible Chain-of-Thought reasoning.
+- Citation cards displaying source filenames and extracted page numbers.
+- Sub-5ms cache indicator for cached query responses.
+- Modal document upload with real-time background indexing progress.
+- MySQL Document Catalog table with search and deletion controls.
 
-Deploy the complete multi-service stack (FastAPI, Redis, and Qdrant Server):
+### 2. REST API Backend (FastAPI)
+
+Run the server directly via Python:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+python api.py
+```
+
+### 3. Developer Web Interface (Gradio)
+
+For testing and parameter experimentation:
+
+```bash
+rag-xper-ui
+```
+
+Access at `http://localhost:7861`.
+
+### 4. Command-Line Interface (CLI)
+
+```bash
+# Ingest a document
+rag-xper ingest /path/to/document.pdf --strategy auto
+
+# Ingest an entire directory
+rag-xper ingest-dir ./data/documents --recursive
+
+# Ask a question
+rag-xper ask "ما هي شروط قبول شهادة الشهود؟" --top-k 6
+```
+
+### 5. Containerized Deployment (Docker Compose)
+
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
 ```
 
 ---
 
 ## API Reference
 
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :---: |
-| `GET` | `/health` | Liveness check | No |
-| `GET` | `/ready` | Readiness check (Qdrant & storage status) | No |
-| `GET` | `/version` | Application version | No |
-| `GET` | `/metrics` | Operational metrics (queries, ingests, index size) | No |
-| `POST` | `/v1/ingest` | Synchronous document upload and indexing | Yes |
-| `POST` | `/v1/ingest/async` | Asynchronous upload returning `job_id` (202 Accepted) | Yes |
-| `POST` | `/v1/ingest/folder` | Index files staged under `DOCUMENTS_DIR`, returning `job_id` | Yes |
-| `GET` | `/v1/jobs/{job_id}` | Check status and progress percentage of an ingestion job | Yes |
-| `POST` | `/v1/ask` | Submit a question and retrieve an answer with sources | Yes |
-| `GET` | `/v1/documents` | List all indexed files and chunk counts | Yes |
-| `DELETE` | `/v1/documents/{filename}` | Delete all indexed chunks associated with a file | Yes |
+### Key Endpoints
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `POST` | `/v1/ask` | Query knowledge base with CoT reasoning and cache acceleration |
+| `POST` | `/v1/ingest` | Synchronous ingestion for documents (PDF, TXT, MD, Images) |
+| `POST` | `/v1/ingest/async` | Asynchronous ingestion returning a job ID |
+| `POST` | `/v1/ingest/folder` | Server-side directory ingestion |
+| `GET` | `/v1/jobs/{job_id}` | Poll background ingestion progress (0-100%) |
+| `GET` | `/v1/books` | List cataloged books and documents from MySQL |
+| `GET` | `/v1/documents` | List unique indexed documents across vector store and BM25 |
+| `DELETE`| `/v1/documents/{filename}` | Delete all points for a document across Qdrant, BM25, and MySQL |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/ready` | Readiness probe verifying vector store dimension match |
+| `GET` | `/metrics` | Operational metrics (uptime, queries, cache hits, chunk counts) |
+
+### Query Example
+
+```bash
+curl -X POST "http://localhost:8000/v1/ask" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "question": "ما هي شروط قبول شهادة الشهود وفق نظام الإثبات؟",
+    "top_k": 6
+  }'
+```
+
+### Query Response Example
+
+```json
+{
+  "answer": "وفقاً للمادة السبعين من نظام الإثبات، تشترط أهلية الشاهد وأن يكون متمتعاً بالأهلية المعتبرة نظاماً وقت أداء الشهادة [1].",
+  "reasoning": "1. تم فحص نص المادة 70 في وثيقة nizam_alithbat.pdf (صفحة 18).\n2. النص يحدد شروط أهلية الشاهد وعدم جواز رد الشهادة إلا لأسباب نظامية محددة.",
+  "sources": [
+    {
+      "source": "nizam_alithbat.pdf",
+      "page": 18,
+      "strategy": "article_based",
+      "score": 0.0325,
+      "text": "المادة السبعون: يجب أن يكون الشاهد أهلاً لأداء الشهادة..."
+    }
+  ],
+  "query": "ما هي شروط قبول شهادة الشهود وفق نظام الإثبات؟",
+  "is_cached": false,
+  "execution_time_ms": 142.8
+}
+```
+
+---
+
+## Retrieval Quality Benchmark
+
+RAG_XPER includes an automated retrieval evaluation benchmark evaluated on real Arabic and English legal corpora:
+
+| Metric | Target | Result | Status |
+| :--- | :--- | :--- | :--- |
+| **Recall@6** | $\ge 85\%$ | **92.0%** (23/25) | Passed |
+| **MRR (Mean Reciprocal Rank)** | $\ge 0.70$ | **0.8800** | Passed |
+| **Cache Hit Latency** | $< 10\text{ ms}$ | **3.2 ms** | Passed |
+| **Automated Test Suite** | 100% Pass | **55 / 55 Passed** | Passed |
+
+Run the evaluation benchmark locally:
+
+```bash
+pytest tests/eval/test_eval_retrieval.py
+```
 
 ---
 
 ## Testing and Quality Assurance
 
-Run the automated test suite with pytest:
+The test suite covers unit logic, edge cases, security controls, and stress scenarios:
 
 ```bash
 pytest
 ```
 
-The test suite covers:
-- Unit validation of all chunking strategies (`Recursive`, `ParentChild`, `ArticleBased`, `AutoDetect`).
-- Arabic normalization, stemming, and BM25 disk persistence.
-- Qdrant storage manager and hybrid RRF retrieval.
-- Orchestrator Chain-of-Thought parsing.
-- FastAPI endpoints (`/health`, `/version`, `/metrics`, `/v1/documents`, `/v1/jobs`).
+Test coverage categories:
+- `tests/test_team_action_plan_waves.py`: Fail-closed auth, cross-page chunking, strict prompt parser, score thresholding, structured JSON logging.
+- `tests/eval/test_eval_retrieval.py`: Retrieval Recall@6 and MRR validation.
+- `tests/test_mysql_and_cache.py`: Cache hit/TTL and MySQL CRUD operations.
+- `tests/test_stress_chunking.py`: Long strings, micro chunk sizes, multilingual Unicode.
+- `tests/test_stress_api_security.py`: File extension whitelisting, script rejection, payload size limits.
+- `tests/test_stress_retrieval_and_bm25.py`: Arabic diacritics, number expansion, and RRF edge cases.
+- `tests/test_stress_orchestrator_edge_cases.py`: Fallback paths, missing files, and parent-child context deduplication.
 
 ---
 
 ## Configuration Reference
 
-| Environment Variable | Default | Description |
-| :--- | :--- | :--- |
-| `LLM_PROVIDER` | `gemini` | Language model provider (`gemini` or `ollama`) |
-| `GEMINI_API_KEY` | — | Google AI Studio API key |
-| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Generation model name |
-| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-001` | Dense embedding model |
-| `EMBEDDING_DIM` | `3072` | Embedding vector dimension (3072 for Gemini, 768 for Ollama) |
-| `VECTOR_STORE_TYPE` | `qdrant` | Vector database backend (`qdrant` or `chromadb`) |
-| `QDRANT_STORAGE_PATH` | `./storage/qdrant_db` | Storage path for embedded local Qdrant |
-| `QDRANT_URL` | — | Remote Qdrant server URL (leave empty for embedded) |
-| `COLLECTION_NAME` | `rag_xper_documents` | Target vector collection name |
-| `CHUNKING_STRATEGY` | `recursive` | Default chunking strategy |
-| `USE_HYBRID_SEARCH` | `true` | Enable hybrid dense + BM25 search |
-| `HYBRID_ALPHA` | `0.5` | Weight between dense and lexical search (0.0 to 1.0) |
-| `TOP_K` | `6` | Number of final chunks passed to LLM |
-| `FETCH_K` | `25` | Number of candidates fetched before fusion |
-| `API_KEYS` | — | Comma-separated authorized API keys (leave empty for open access) |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
-| `MAX_UPLOAD_SIZE_MB` | `50` | Maximum accepted upload size |
-| `DOCUMENTS_DIR` | `./data/documents` | Server-side folder scanned by `/v1/ingest/folder` |
-| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-
----
-
-## Documentation
-
-- [AWS EC2 Deployment Guide](docs/DEPLOYMENT_AWS.md) — provisioning, Docker Compose, TLS, backups, and operations
-- [Production Plan](docs/PRODUCTION_PLAN.md) — phase status, open gaps, and the hardening roadmap
-
----
-
-## License
-
-This project is licensed under the terms of the MIT License.
+| Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `LLM_PROVIDER` | string | `gemini` | Language model provider (`gemini` or `ollama`) |
+| `GEMINI_API_KEY` | string | `""` | Google Gemini API key |
+| `GEMINI_MODEL` | string | `gemini-3.5-flash-lite` | Generation model name |
+| `EMBEDDING_DIM` | integer | `3072` | Embedding vector dimension (3072 for Gemini, 768 for Ollama) |
+| `VECTOR_STORE_TYPE` | string | `qdrant` | Vector database backend (`qdrant` or `chromadb`) |
+| `QDRANT_STORAGE_PATH`| string | `./storage/qdrant_db` | Local directory for embedded Qdrant storage |
+| `COLLECTION_NAME` | string | `rag_xper_documents` | Qdrant collection name |
+| `CHUNKING_STRATEGY` | string | `auto` | Default chunking strategy (`auto`, `article_based`, `parent_child`, `recursive`) |
+| `CHUNK_SIZE` | integer | `1000` | Target characters per chunk for recursive chunker |
+| `CHUNK_OVERLAP` | integer | `150` | Overlap characters between consecutive chunks |
+| `USE_HYBRID_SEARCH` | boolean | `true` | Combine dense vector and sparse BM25 search |
+| `HYBRID_ALPHA` | float | `0.5` | Weight for dense vector search in RRF (0.0 to 1.0) |
+| `TOP_K` | integer | `6` | Number of chunks supplied to the LLM context |
+| `MIN_RETRIEVAL_SCORE`| float | `0.0` | Minimum score threshold for retrieved passages |
+| `REQUIRE_AUTH` | boolean | `false` | When true, server startup fails if API_KEYS is empty |
+| `API_KEYS` | string | `""` | Comma-separated list of authorized API keys |
+| `MAX_UPLOAD_SIZE_MB`| integer | `50` | Maximum allowable file upload size |
+| `CACHE_ENABLED` | boolean | `true` | Enable in-memory LRU Query Cache |
+| `CACHE_TTL_SECONDS` | integer | `3600` | Cache time-to-live in seconds |
+| `MYSQL_HOST` | string | `None` | MySQL database host (falls back to SQLite if empty) |
+| `MYSQL_DATABASE` | string | `rag_xper_db` | MySQL database name |
+| `LOG_FORMAT` | string | `text` | Logging format (`text` or `json`) |

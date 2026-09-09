@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XPER - المساعد الذكي</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Cairo', 'Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        xper: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                            800: '#065f46',
+                            900: '#064e3b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Marked.js for Markdown Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-[#F8FAFC] text-slate-800 font-sans h-screen flex overflow-hidden antialiased select-none">
+
+    <!-- Right Sidebar (القائمة الجانبية على اليمين) -->
+    <aside id="sidebar" class="w-72 bg-white border-l border-slate-200 flex flex-col justify-between p-4 z-30 transition-all duration-300 shrink-0">
+        <div>
+            <!-- Top Branding Logo -->
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl font-black tracking-tight text-slate-800">XPER</span>
+                    <div class="flex items-center gap-1">
+                        <span class="w-2.5 h-2.5 rounded-full bg-xper-500"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-xper-500"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-xper-500"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-xper-300"></span>
+                    </div>
+                </div>
+                <!-- Direction/Lang Toggle -->
+                <button id="langToggleBtn" class="text-xs font-semibold px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition">
+                    EN
+                </button>
+            </div>
+
+            <!-- New Chat Button -->
+            <button id="newChatBtn" class="w-full mt-4 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-xper-500/30 text-xper-700 bg-xper-50/60 hover:bg-xper-50 font-bold transition shadow-sm active:scale-[0.99]">
+                <span class="text-lg font-bold">+</span>
+                <span>محادثة جديدة</span>
+            </button>
+
+            <!-- Navigation Tabs -->
+            <div class="mt-4 flex gap-1 p-1 bg-slate-100 rounded-xl text-xs font-bold text-slate-600">
+                <button id="tabChat" class="flex-1 py-1.5 rounded-lg bg-white shadow-xs text-xper-700 transition">المحادثة</button>
+                <button id="tabBooks" class="flex-1 py-1.5 rounded-lg hover:text-xper-600 transition">مكتبة الكتب (MySQL)</button>
+                <button id="tabStats" class="flex-1 py-1.5 rounded-lg hover:text-xper-600 transition">المراقبة</button>
+            </div>
+
+            <!-- Chat History Section -->
+            <div id="chatHistoryContainer" class="mt-5">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-600 mb-2 px-1">
+                    <span>سجل المحادثات</span>
+                    <span id="cacheHitCount" class="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full">⚡ كاش مفعّل</span>
+                </div>
+                <div id="chatHistoryList" class="space-y-1.5 max-h-[42vh] overflow-y-auto pr-1">
+                    <!-- Active Chat Item (Matches User Image) -->
+                    <div class="chat-item active p-2.5 rounded-xl bg-xper-50 border border-xper-200/60 cursor-pointer flex flex-col gap-0.5 transition">
+                        <span class="text-sm font-bold text-xper-900 truncate">المحادثة الحالية</span>
+                        <span class="text-[11px] text-xper-600">اليوم -- الآن</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar Footer (User Info & Actions) -->
+        <div class="pt-3 border-t border-slate-100 flex flex-col gap-2">
+            <div class="flex items-center justify-between px-1">
+                <div>
+                    <span class="text-xs font-bold text-slate-800 block">admin</span>
+                    <span class="text-[10px] text-slate-600">رمز الداتا: H4346095</span>
+                </div>
+                <button id="uploadModalBtn" class="p-2 rounded-lg bg-slate-100 hover:bg-xper-50 hover:text-xper-600 text-slate-600 transition" title="رفع مستند">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                </button>
+            </div>
+            <button class="w-full py-1.5 text-center text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-lg transition">
+                تسجيل الخروج
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col h-full bg-[#FAFAFA] relative overflow-hidden">
+
+        <!-- Top Header Bar -->
+        <header class="h-14 bg-white/90 backdrop-blur border-b border-slate-200 px-6 flex items-center justify-between shrink-0 z-10">
+            <div class="flex items-center gap-3">
+                <button id="sidebarToggleBtn" class="text-slate-500 hover:text-slate-800 p-1.5 rounded-lg hover:bg-slate-100 transition lg:hidden">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-base font-bold text-slate-800">المساعد الذكي</h1>
+                    <!-- Green Verified Icon -->
+                    <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-xper-500 text-white text-xs font-bold">
+                        ✓
+                    </span>
+                </div>
+            </div>
+
+            <!-- Right Status & Engine Badges -->
+            <div class="flex items-center gap-3 text-xs">
+                <span id="engineBadge" class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-semibold border border-slate-200">
+                    Qdrant + BM25
+                </span>
+                <span id="cacheBadge" class="hidden px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 animate-pulse">
+                    ⚡ كاش ميموري نشط
+                </span>
+                <div class="w-2.5 h-2.5 rounded-full bg-emerald-500" title="السيرفر متصل"></div>
+            </div>
+        </header>
+
+        <!-- View 1: Chat Area (Default) -->
+        <div id="chatView" class="flex-1 flex flex-col h-[calc(100vh-3.5rem)] relative overflow-hidden">
+            <!-- Messages Stream Container -->
+            <div id="messagesContainer" class="flex-1 overflow-y-auto px-4 md:px-12 py-6 space-y-6 pb-28">
+                
+                <!-- Initial Welcome Message Bubble (Matches User Image Exact Design) -->
+                <div class="flex items-start gap-3 max-w-3xl">
+                    <div class="w-8 h-8 rounded-full bg-xper-500 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-sm mt-1">
+                        ✦
+                    </div>
+                    <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs text-slate-700 leading-relaxed text-sm">
+                        <p class="font-bold text-slate-800 mb-1">مرحباً بك في نظام XPER المالي والذكي! 📊</p>
+                        <p>يمكنك طلب كشف حساب، ميزان مراجعة، أو طرح أي سؤال وسأقوم بتحليله واسترجاعه فوراً من المستندات والكتب المفهرسة.</p>
+                        <div class="mt-3 flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                            <button onclick="sendQuickPrompt('ما هي شروط قبول شهادة الشهود؟')" class="text-xs bg-slate-50 hover:bg-xper-50 text-slate-600 hover:text-xper-700 px-2.5 py-1.5 rounded-lg border border-slate-200 transition">
+                                💡 ما هي شروط قبول شهادة الشهود؟
+                            </button>
+                            <button onclick="sendQuickPrompt('لخص لي أحكام الالتزام والعقود')" class="text-xs bg-slate-50 hover:bg-xper-50 text-slate-600 hover:text-xper-700 px-2.5 py-1.5 rounded-lg border border-slate-200 transition">
+                                📑 لخص لي أحكام الالتزام والعقود
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Bottom Floating Pill Input Bar (Matches User Image) -->
+            <div class="absolute bottom-6 left-0 right-0 px-4 md:px-12 flex justify-center pointer-events-none">
+                <div class="w-full max-w-3xl bg-white rounded-full shadow-lg border border-slate-200/90 p-2 flex items-center gap-2 pointer-events-auto backdrop-blur">
+                    
+                    <!-- Send Button (Green Circle with Arrow on the Left in RTL) -->
+                    <button id="sendBtn" class="w-10 h-10 rounded-full bg-xper-500 hover:bg-xper-600 text-white flex items-center justify-center shrink-0 shadow-sm transition active:scale-95">
+                        <svg class="w-5 h-5 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                        </svg>
+                    </button>
+
+                    <!-- Textarea / Input -->
+                    <input id="queryInput" type="text" placeholder="اطلب تقريراً أو اسأل المساعد..." class="flex-1 bg-transparent border-0 outline-none px-3 text-sm text-slate-800 placeholder-slate-400">
+
+                    <!-- Attach / Ingest File Quick Button -->
+                    <button id="quickAttachBtn" class="p-2 text-slate-400 hover:text-xper-600 rounded-full transition" title="رفع ملف">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- View 2: Books & Documents Catalog (MySQL) -->
+        <div id="booksView" class="hidden flex-1 overflow-y-auto p-6 md:p-10">
+            <div class="max-w-5xl mx-auto space-y-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800">مكتبة الكتب والمستندات (MySQL)</h2>
+                        <p class="text-xs text-slate-600">إدارة وفهرسة الكتب المحفوظة في قاعدة بيانات المشروع.</p>
+                    </div>
+                    <button onclick="openUploadModal()" class="px-4 py-2 bg-xper-500 hover:bg-xper-600 text-white font-bold rounded-xl text-xs shadow-sm flex items-center gap-1.5 transition">
+                        <span>+ إضافة كتاب جديد</span>
+                    </button>
+                </div>
+
+                <!-- Books Table -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <table class="w-full text-right text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-100 text-slate-600 font-bold">
+                            <tr>
+                                <th class="p-3.5">عنوان الكتاب / المستند</th>
+                                <th class="p-3.5">المؤلف / التصنيف</th>
+                                <th class="p-3.5">عدد القطع</th>
+                                <th class="p-3.5">استراتيجية التقطيع</th>
+                                <th class="p-3.5">الحالة</th>
+                                <th class="p-3.5 text-center">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="booksTableBody" class="divide-y divide-slate-100 text-slate-700">
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-slate-600">جارٍ تحميل قائمة الكتب من قاعدة البيانات...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- View 3: System Telemetry & Cache Stats -->
+        <div id="statsView" class="hidden flex-1 overflow-y-auto p-6 md:p-10">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">المراقبة وإحصائيات الكاش ميموري</h2>
+                    <p class="text-xs text-slate-600">أداء الذاكرة المؤقتة، الاستعلامات، وحالة النظام لحظياً.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                        <span class="text-xs text-slate-600 block">إجمالي الاستعلامات</span>
+                        <span id="statQueries" class="text-2xl font-black text-slate-800 mt-1 block">0</span>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                        <span class="text-xs text-slate-600 block">ضربات الكاش (Cache Hits)</span>
+                        <span id="statCacheHits" class="text-2xl font-black text-emerald-600 mt-1 block">0</span>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                        <span class="text-xs text-slate-600 block">القطع المفهرسة في BM25</span>
+                        <span id="statBM25" class="text-2xl font-black text-slate-800 mt-1 block">0</span>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                    <h3 class="text-sm font-bold text-slate-800">حالة الكاش والذاكرة المؤقتة</h3>
+                    <div class="text-xs text-slate-600 space-y-2">
+                        <p>⚡ **In-Memory LRU Cache**: مفعل تلقائياً للاستعلامات المكررة بسرعة استجابة أقل من 5 ملي ثانية.</p>
+                        <p>🔒 **MySQL Database**: قاعدة البيانات `rag_xper_db` متصلة وجاهزة لتخزين الكتب وسجل المحادثات.</p>
+                    </div>
+                    <button onclick="clearSystemCache()" class="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-bold transition">
+                        تفريغ الكاش ميموري
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Upload & Ingest Modal -->
+    <div id="uploadModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-bold text-slate-800">رفع وفهرسة كتاب / مستند</h3>
+                <button onclick="closeUploadModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+            </div>
+
+            <!-- Form -->
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">عنوان الكتاب / المستند</label>
+                    <input id="bookTitleInput" type="text" placeholder="مثال: نظام المعاملات المدنية" class="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:border-xper-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">المؤلف / الجهة</label>
+                        <input id="bookAuthorInput" type="text" placeholder="مثال: وزارة العدل" class="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:border-xper-500">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">التصنيف</label>
+                        <input id="bookCategoryInput" type="text" placeholder="مثال: قانوني، مالي، تقني" class="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:border-xper-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">استراتيجية التقطيع (Chunking Strategy)</label>
+                    <select id="chunkStrategySelect" class="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:border-xper-500 bg-white">
+                        <option value="recursive">عادي - للمستندات والكتب العامة (Recursive)</option>
+                        <option value="parent_child">هرمي - دقة بحث عالية وسياق كامل (Parent-Child)</option>
+                        <option value="article_based">قانوني - مادة بمادة ومفصل (Article-Based)</option>
+                        <option value="auto">تلقائي - فحص ذكي للمستند (Auto-Detect)</option>
+                    </select>
+                </div>
+
+                <!-- Dropzone -->
+                <div id="dropZone" class="border-2 border-dashed border-slate-200 hover:border-xper-500 rounded-2xl p-6 text-center cursor-pointer transition bg-slate-50/50">
+                    <input id="fileUploadInput" type="file" class="hidden" accept=".pdf,.md,.txt,.png,.jpg,.jpeg">
+                    <svg class="w-8 h-8 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <span id="selectedFileName" class="block font-bold text-slate-700">اسحب الملف هنا أو انقر للاختيار</span>
+                    <span class="block text-[11px] text-slate-600 mt-0.5">يدعم PDF، Markdown، TXT، والصور</span>
+                </div>
+
+                <!-- Progress Bar -->
+                <div id="uploadProgressContainer" class="hidden space-y-1">
+                    <div class="flex justify-between text-[11px] font-bold text-slate-600">
+                        <span id="uploadStatusText">جارٍ الفهرسة والمعالجة في الخلفية...</span>
+                        <span id="uploadPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div id="uploadProgressBar" class="bg-xper-500 h-2 rounded-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Actions -->
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button onclick="closeUploadModal()" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition">إلغاء</button>
+                <button id="submitUploadBtn" class="px-5 py-2 rounded-xl text-xs font-bold bg-xper-500 hover:bg-xper-600 text-white shadow-sm transition">بدء الفهرسة</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="app.js"></script>
+</body>
+</html>
