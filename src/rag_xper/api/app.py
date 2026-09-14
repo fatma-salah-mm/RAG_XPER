@@ -72,6 +72,7 @@ async def unhandled_exception_handler(_request: Request, exc: Exception):
     logger.exception("Unhandled server error: %s", exc)
     return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
+
 try:
     init_db()
 except Exception as db_exc:

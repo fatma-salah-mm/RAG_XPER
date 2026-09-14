@@ -93,11 +93,7 @@ class QueryCache:
             "ttl_seconds": ttl_seconds,
             "hits": hits,
             "misses": misses,
-            "hit_ratio": (
-                round(hits / (hits + misses), 3)
-                if (hits + misses) > 0
-                else 0.0
-            ),
+            "hit_ratio": (round(hits / (hits + misses), 3) if (hits + misses) > 0 else 0.0),
         }
 
 

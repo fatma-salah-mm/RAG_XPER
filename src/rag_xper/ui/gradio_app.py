@@ -85,13 +85,14 @@ def handle_query(question: str, history):
                 score = getattr(src, "score", 0.0)
                 score_str = f"{score:.3f}" if isinstance(score, (int, float)) else str(score)
                 sources_md += (
-                    f"* **[{i}]** `{src_name}` (صفحة {page} | {stype} | {strat}) "
-                    f"— **درجة التطابق:** `{score_str}`\n"
+                    f"* **[{i}]** `{src_name}` (صفحة {page} | {stype} | {strat}) — **درجة التطابق:** `{score_str}`\n"
                 )
         else:
             sources_md += "*لا توجد مصادر مطابقة.*"
 
-        reasoning_text = (getattr(response, "reasoning", None) or "").strip() or "تم التوليد المباشر بناءً على السياق المسترجع."
+        reasoning_text = (
+            getattr(response, "reasoning", None) or ""
+        ).strip() or "تم التوليد المباشر بناءً على السياق المسترجع."
         answer_text = getattr(response, "answer", "")
 
         if isinstance(history, list) and (len(history) == 0 or isinstance(history[0], dict)):

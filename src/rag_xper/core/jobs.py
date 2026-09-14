@@ -154,7 +154,9 @@ class RedisJobManager:
         try:
             import redis
         except ImportError as exc:
-            raise RuntimeError("redis package is required when REDIS_URL is set. Install with: uv sync --extra redis") from exc
+            raise RuntimeError(
+                "redis package is required when REDIS_URL is set. Install with: uv sync --extra redis"
+            ) from exc
 
         self._client = redis.Redis.from_url(redis_url, decode_responses=True)
 

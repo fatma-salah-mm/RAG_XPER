@@ -45,9 +45,7 @@ class QdrantStoreManager(BaseVectorStore):
         embedding_fn: Callable[[list[str]], list[list[float]]] | None = None,
     ) -> None:
         if not _QDRANT_AVAILABLE:
-            raise VectorDBConnectionError(
-                "qdrant-client is not installed. Run: uv sync"
-            )
+            raise VectorDBConnectionError("qdrant-client is not installed. Run: uv sync")
 
         self._collection_name = collection_name
         self._embedding_dim = embedding_dim

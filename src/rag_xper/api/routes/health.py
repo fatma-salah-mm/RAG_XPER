@@ -1,59 +1,1 @@
-"""Health, readiness, metrics, and version endpoints."""
-
-from __future__ import annotationsfrom fastapi import APIRouter, Depends, HTTPExceptionfrom fastapi.responses import PlainTextResponsefrom rag_xper import __version__from rag_xper.api import statefrom rag_xper.api.dependencies import verify_metrics_accessfrom rag_xper.api.metrics import collect_metrics, render_prometheusfrom rag_xper.config import settingsrouter = APIRouter(tags=["Health & Observability"])
-
-
-@router.get("/health")
-async def health_check():
-    return {"status": "ok", "app": "RAG_XPER", "version": __version__}
-
-
-@router.get("/ready")
-async def readiness_check():
-    try:
-        orch = state.get_orchestrator()
-        if hasattr(orch._vector_store, "_client"):
-            client = orch._vector_store._client
-            col_name = getattr(orch._vector_store, "_collection_name", settings.collection_name)
-            col_info = client.get_collection(collection_name=col_name)
-            dim = col_info.config.params.vectors.size
-            if dim != settings.embedding_dim:
-                raise HTTPException(
-                    status_code=503,
-                    detail=(
-                        f"Collection dimension mismatch: Qdrant={dim}, "
-                        f"Settings={settings.embedding_dim}. Change COLLECTION_NAME and re-ingest."
-                    ),
-                )
-        return {
-            "status": "ready",
-            "vector_store": settings.vector_store_type,
-            "collection": settings.collection_name,
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Service not ready: {exc}") from exc
-
-
-@router.get("/metrics", dependencies=[Depends(verify_metrics_access)])
-async def metrics_endpoint():
-    return collect_metrics()
-
-
-@router.get(
-    "/metrics/prometheus",
-    dependencies=[Depends(verify_metrics_access)],
-    response_class=PlainTextResponse,
-)
-async def prometheus_metrics_endpoint():
-    return PlainTextResponse(
-        content=render_prometheus(collect_metrics()),
-        media_type="text/plain; version=0.0.4; charset=utf-8",
-    )
-
-
-@router.get("/version")
-async def version_endpoint():
-    return {"version": __version__, "app": "RAG_XPER"}
-
+"""Health, readiness, metrics, and version endpoints."""from __future__ import annotationsfrom fastapi import APIRouter, Depends, HTTPExceptionfrom fastapi.responses import PlainTextResponsefrom rag_xper import __version__from rag_xper.api import statefrom rag_xper.api.dependencies import verify_metrics_accessfrom rag_xper.api.metrics import collect_metrics, render_prometheusfrom rag_xper.config import settingsrouter = APIRouter(tags=["Health & Observability"])@router.get("/health")async def health_check():    return {"status": "ok", "app": "RAG_XPER", "version": __version__}@router.get("/ready")async def readiness_check():    try:        orch = state.get_orchestrator()        if hasattr(orch._vector_store, "_client"):            client = orch._vector_store._client            col_name = getattr(orch._vector_store, "_collection_name", settings.collection_name)            col_info = client.get_collection(collection_name=col_name)            dim = col_info.config.params.vectors.size            if dim != settings.embedding_dim:                raise HTTPException(                    status_code=503,                    detail=(                        f"Collection dimension mismatch: Qdrant={dim}, "                        f"Settings={settings.embedding_dim}. Change COLLECTION_NAME and re-ingest."                    ),                )        return {            "status": "ready",            "vector_store": settings.vector_store_type,            "collection": settings.collection_name,        }    except HTTPException:        raise    except Exception as exc:        raise HTTPException(status_code=503, detail=f"Service not ready: {exc}") from exc@router.get("/metrics", dependencies=[Depends(verify_metrics_access)])async def metrics_endpoint():    return collect_metrics()@router.get(    "/metrics/prometheus",    dependencies=[Depends(verify_metrics_access)],    response_class=PlainTextResponse,)async def prometheus_metrics_endpoint():    return PlainTextResponse(        content=render_prometheus(collect_metrics()),        media_type="text/plain; version=0.0.4; charset=utf-8",    )@router.get("/version")async def version_endpoint():    return {"version": __version__, "app": "RAG_XPER"}

@@ -55,9 +55,8 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
-
+      fail-fast: false
       matrix:
-
         python-version: ["3.10", "3.11", "3.12"]
 
 
@@ -103,14 +102,10 @@ jobs:
 
 
       - name: Install Python dependencies
-
-        run: uv sync --extra all --frozen --group dev
-
-
+        run: uv sync --extra all --frozen --group dev --python ${{ matrix.python-version }}
 
       - name: Run pytest with coverage gate
-
-        run: uv run pytest --cov=rag_xper --cov-report=term-missing --cov-fail-under=65
+        run: uv run --python ${{ matrix.python-version }} pytest --cov=rag_xper --cov-report=term-missing --cov-fail-under=65
 
 
 

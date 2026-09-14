@@ -14,20 +14,20 @@ Covers:
 - Query exception resilience
 - Concurrent multi-user UI interactions
 """
+
 from __future__ import annotations
 
 import concurrent.futures
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-import pytest
 
 import gradio as gr
 from apps.gradio_ui.app import create_ui, handle_file_upload, handle_query
+
 from rag_xper.core.models import Chunk, RAGResponse, RetrievedChunk
 
-
 # --- 1. UI Creation and Component Architecture ---
+
 
 def test_ui_creation_and_components():
     """Verify create_ui returns a valid gr.Blocks with all necessary interactive elements."""
@@ -46,6 +46,7 @@ def test_ui_creation_and_components():
 
 
 # --- 2. File Upload Tests & Edge Cases ---
+
 
 def test_handle_file_upload_none():
     """Uploading None should prompt user immediately with Arabic warning."""
@@ -109,6 +110,7 @@ def test_handle_file_upload_exception_resilience():
 
 
 # --- 3. Chat & Query Tests & Edge Cases ---
+
 
 def test_handle_query_empty_or_whitespace():
     """Empty or whitespace queries must return immediately without invoking orchestrator."""
@@ -231,6 +233,7 @@ def test_handle_query_orchestrator_exception():
 
 # --- 4. Concurrency Stress Test on UI Handlers ---
 
+
 def test_ui_handlers_concurrency_stress():
     """Simulate 25 concurrent users querying and uploading files to UI handlers simultaneously."""
     mock_orch = MagicMock()
@@ -238,6 +241,7 @@ def test_ui_handlers_concurrency_stress():
     mock_orch.ingest_file.return_value = 5
 
     with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
+
         def worker(idx: int):
             if idx % 2 == 0:
                 q_out, hist_out, reason_out, src_out = handle_query(f"سؤال رقم {idx}", [])

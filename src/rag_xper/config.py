@@ -157,9 +157,7 @@ class Settings(BaseSettings):
             raise ConfigurationError("REQUIRE_AUTH is true but API_KEYS is empty. Please set API_KEYS in .env.")
         if self.app_env == "production":
             if not self.require_auth or not self.api_keys:
-                raise ConfigurationError(
-                    "Production deployment requires REQUIRE_AUTH=true and non-empty API_KEYS."
-                )
+                raise ConfigurationError("Production deployment requires REQUIRE_AUTH=true and non-empty API_KEYS.")
             if "*" in self.cors_origins:
                 raise ConfigurationError(
                     "Production deployment cannot use CORS_ORIGINS=*; set explicit allowed origins."
