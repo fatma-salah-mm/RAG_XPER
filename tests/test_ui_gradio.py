@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_ui_gradio.py
 
 Comprehensive tests for the Gradio Web Interface (apps/gradio_ui/app.py).
@@ -69,7 +69,7 @@ def test_handle_file_upload_strategy_mapping_and_success(tmp_path):
     mock_orch = MagicMock()
     mock_orch.ingest_file.return_value = 14
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         for label, expected_key in strategies:
             file_obj = SimpleNamespace(name=str(dummy_file))
             res = handle_file_upload(file_obj, label)
@@ -90,7 +90,7 @@ def test_handle_file_upload_already_indexed(tmp_path):
     mock_orch = MagicMock()
     mock_orch.ingest_file.return_value = 0
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         res = handle_file_upload(str(dummy_file), "🟢 عادي للكتب والمستندات (Recursive)")
         assert "مفهرس مسبقاً" in res
         assert "cached_manual.pdf" in res
@@ -101,7 +101,7 @@ def test_handle_file_upload_exception_resilience():
     mock_orch = MagicMock()
     mock_orch.ingest_file.side_effect = RuntimeError("Disk full: write failed")
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         file_obj = SimpleNamespace(name="corrupted.pdf")
         res = handle_file_upload(file_obj, "🤖 فحص ذكي تلقائي (Auto-Detect)")
         assert "❌ فشلت معالجة الملف" in res
@@ -113,7 +113,7 @@ def test_handle_file_upload_exception_resilience():
 def test_handle_query_empty_or_whitespace():
     """Empty or whitespace queries must return immediately without invoking orchestrator."""
     mock_orch = MagicMock()
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         q_out, hist_out, reason_out, src_out = handle_query("", [])
         assert q_out == ""
         assert hist_out == []
@@ -136,7 +136,7 @@ def test_handle_query_modern_dict_history():
     )
     mock_orch.query.return_value = mock_response
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         init_history = [{"role": "user", "content": "مرحبا"}, {"role": "assistant", "content": "أهلاً بك"}]
         q_out, hist_out, reason_out, src_out = handle_query("ما هو الحد الأدنى؟", init_history)
 
@@ -159,7 +159,7 @@ def test_handle_query_legacy_tuple_history():
     )
     mock_orch.query.return_value = mock_response
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         init_history = [("سؤال سابق", "إجابة سابقة")]
         q_out, hist_out, reason_out, src_out = handle_query("سؤال جديد", init_history)
 
@@ -174,7 +174,7 @@ def test_handle_query_none_history():
     mock_response = RAGResponse(answer="إجابة", reasoning="", sources=[], query="سؤال")
     mock_orch.query.return_value = mock_response
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         q_out, hist_out, reason_out, src_out = handle_query("سؤال", None)
         assert isinstance(hist_out, list)
         assert len(hist_out) == 2
@@ -207,7 +207,7 @@ def test_handle_query_sources_rendering_and_malformed_metadata():
     )
     mock_orch.query.return_value = mock_response
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         q_out, hist_out, reason_out, src_out = handle_query("ما هي نصوص القانون؟", [])
 
         assert "labor_law.pdf" in src_out
@@ -221,7 +221,7 @@ def test_handle_query_orchestrator_exception():
     mock_orch = MagicMock()
     mock_orch.query.side_effect = TimeoutError("Gemini API timed out after 30s")
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         q_out, hist_out, reason_out, src_out = handle_query("سؤال صعب جداً", [])
 
         assert "❌ حدث خطأ أثناء الاستعلام" in reason_out
@@ -237,7 +237,7 @@ def test_ui_handlers_concurrency_stress():
     mock_orch.query.return_value = RAGResponse(answer="إجابة فورية سريعة", reasoning="تحليل", sources=[], query="سؤال")
     mock_orch.ingest_file.return_value = 5
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         def worker(idx: int):
             if idx % 2 == 0:
                 q_out, hist_out, reason_out, src_out = handle_query(f"سؤال رقم {idx}", [])

@@ -149,7 +149,7 @@ def test_adversarial_queries_against_api(payload: str):
         sources=[],
         query=payload,
     )
-    with patch("rag_xper.api.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.api.state.get_orchestrator", return_value=mock_orch):
         res = client.post("/v1/ask", json={"question": payload})
         assert res.status_code in (200, 422)
 
@@ -251,7 +251,7 @@ def test_ui_torture_adversarial_queries_and_null_bytes():
         query="test",
     )
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch):
         torture_inputs = [
             "🔥🔥🔥" * 100,
             "\x00\x00\x00\x01\x02",
@@ -286,8 +286,8 @@ def test_ui_and_api_high_concurrency_stampede():
         query="سؤال",
     )
 
-    with patch("apps.gradio_ui.app.get_orchestrator", return_value=mock_orch), \
-         patch("rag_xper.api.app.get_orchestrator", return_value=mock_orch):
+    with patch("rag_xper.ui.gradio_app.get_orchestrator", return_value=mock_orch), \
+         patch("rag_xper.api.state.get_orchestrator", return_value=mock_orch):
         def mixed_worker(worker_id: int):
             if worker_id % 3 == 0:
                 # UI query

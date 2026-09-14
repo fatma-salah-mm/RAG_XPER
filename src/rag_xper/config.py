@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # --- OCR ---
     ocr_engine: str = "easyocr"
-    ocr_languages: tuple[str, ...] = ("en", "ar")
+    ocr_languages: str | tuple[str, ...] = ("en", "ar")
     native_text_min_chars: int = 20
     ocr_render_zoom: float = 2.5
 
@@ -73,9 +73,9 @@ class Settings(BaseSettings):
     # --- API Security ---
     app_env: Literal["development", "production", "test"] = "development"
     require_auth: bool = False
-    api_keys: tuple[str, ...] = ()
+    api_keys: str | tuple[str, ...] = ()
     max_upload_size_mb: int = 50
-    cors_origins: tuple[str, ...] = ("*",)
+    cors_origins: str | tuple[str, ...] = ("*",)
     docs_enabled: bool = True
     metrics_require_auth: bool = False
     rate_limit_per_minute: int = 30
