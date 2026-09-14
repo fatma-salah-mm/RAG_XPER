@@ -8,15 +8,52 @@ Tests:
 - Input boundary validation (negative top_k, empty questions)
 - Non-existent document deletions
 """
+
 from __future__ import annotations
 
 import io
+
 import pytest
 from fastapi.testclient import TestClient
+
 from rag_xper.api.app import app
 from rag_xper.config import settings
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def auth_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "require_auth", True)
+    monkeypatch.setattr(settings, "api_keys", ("test-secret-key",))
+
+
+def test_missing_api_key_returns_401(auth_enabled):
+    response = client.post("/v1/ask", json={"question": "test question"})
+    assert response.status_code == 401
+    assert "Missing API key" in response.json()["detail"]
+
+
+def test_invalid_api_key_returns_401(auth_enabled):
+    response = client.post(
+        "/v1/ask",
+        json={"question": "test question"},
+        headers={"X-API-Key": "wrong-key"},
+    )
+    assert response.status_code == 401
+    assert "Invalid API key" in response.json()["detail"]
+
+
+def test_metrics_requires_auth_when_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "metrics_require_auth", True)
+    monkeypatch.setattr(settings, "require_auth", True)
+    monkeypatch.setattr(settings, "api_keys", ("metrics-key",))
+
+    unauth = client.get("/metrics")
+    assert unauth.status_code == 401
+
+    authed = client.get("/metrics", headers={"X-API-Key": "metrics-key"})
+    assert authed.status_code == 200
 
 
 def test_forbidden_file_extension_rejection():

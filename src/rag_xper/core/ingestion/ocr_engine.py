@@ -3,10 +3,10 @@ rag_xper.core.ingestion.ocr_engine
 
 OCR engine supporting EasyOCR and PaddleOCR with line grouping for Arabic & English.
 """
+
 from __future__ import annotations
 
 import io
-from typing import List
 
 from PIL import Image
 
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 class OCREngine:
     """Extracts text from raw image bytes or image files using EasyOCR or PaddleOCR."""
 
-    def __init__(self, engine: str = "easyocr", languages: List[str] | None = None) -> None:
+    def __init__(self, engine: str = "easyocr", languages: list[str] | None = None) -> None:
         self._engine_type = engine.lower()
         self._languages = languages or ["en", "ar"]
         self._reader = None
@@ -40,12 +40,14 @@ class OCREngine:
             if self._reader is None:
                 try:
                     import easyocr
+
                     self._reader = easyocr.Reader(self._languages, gpu=False)
                 except Exception as exc:
                     raise OCRExtractionError(f"EasyOCR not available: {exc}") from exc
 
             try:
                 import numpy as np
+
                 img_array = np.array(image)
                 results = self._reader.readtext(img_array, paragraph=True)
                 lines = [res[1] for res in results if isinstance(res, (list, tuple)) and len(res) >= 2]
@@ -57,6 +59,7 @@ class OCREngine:
             if self._paddle is None:
                 try:
                     from paddleocr import PaddleOCR
+
                     paddle_lang = "ar" if "ar" in self._languages else (self._languages[0] if self._languages else "en")
                     self._paddle = PaddleOCR(use_angle_cls=True, lang=paddle_lang)
                 except Exception as exc:
@@ -64,6 +67,7 @@ class OCREngine:
 
             try:
                 import numpy as np
+
                 img_array = np.array(image)
                 result = self._paddle.ocr(img_array, cls=True)
                 lines = []

@@ -4,13 +4,13 @@ rag_xper.core.generation.llm_interface
 Backend-ready LLM interface supporting Google Gemini (modern SDK) and local Ollama.
 Includes automatic sub-batching, rate-limit backoff, and timeouts.
 """
+
 from __future__ import annotations
 
 import abc
 import concurrent.futures
 import re
 import time
-from typing import List, Optional
 
 from rag_xper.core.exceptions import LLMGenerationError, LLMTimeoutError
 from rag_xper.utils.logger import get_logger
@@ -43,7 +43,7 @@ class BaseLLM(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError
 
 
@@ -69,10 +69,12 @@ class GeminiLLM(BaseLLM):
 
         try:
             from google import genai
+
             self._client = genai.Client(api_key=api_key)
             self._use_modern_client = True
         except ImportError:
             import google.generativeai as genai
+
             self._genai = genai
             self._genai.configure(api_key=api_key)
             self._model = genai.GenerativeModel(model_name)
@@ -80,25 +82,34 @@ class GeminiLLM(BaseLLM):
 
         logger.info(
             "GeminiLLM ready (model=%s, embedding_model=%s, modern_sdk=%s)",
-            model_name, embedding_model, self._use_modern_client,
+            model_name,
+            embedding_model,
+            self._use_modern_client,
         )
 
     def generate(self, prompt: str) -> str:
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(1, self._max_retries + 2):
             future = self._executor.submit(self._call_model, prompt)
             try:
                 return future.result(timeout=self._timeout)
             except concurrent.futures.TimeoutError as exc:
                 future.cancel()
-                logger.warning("Gemini call timed out after %ds (attempt %d/%d)", self._timeout, attempt, self._max_retries + 1)
+                logger.warning(
+                    "Gemini call timed out after %ds (attempt %d/%d)", self._timeout, attempt, self._max_retries + 1
+                )
                 raise LLMTimeoutError(f"Gemini generation exceeded {self._timeout}s timeout") from exc
             except Exception as exc:
                 last_exc = exc
                 err_str = str(exc)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "Quota exceeded" in err_str:
                     delay = _extract_retry_delay(exc, default_delay=20.0)
-                    logger.warning("Gemini rate limit (429) hit. Sleeping %.1fs before retry (%d/%d)...", delay, attempt, self._max_retries + 1)
+                    logger.warning(
+                        "Gemini rate limit (429) hit. Sleeping %.1fs before retry (%d/%d)...",
+                        delay,
+                        attempt,
+                        self._max_retries + 1,
+                    )
                     time.sleep(delay)
                 else:
                     logger.warning("Gemini call failed on attempt %d/%d: %s", attempt, self._max_retries + 1, exc)
@@ -109,6 +120,7 @@ class GeminiLLM(BaseLLM):
     def _call_model(self, prompt: str) -> str:
         if self._use_modern_client:
             from google.genai import types
+
             response = self._client.models.generate_content(
                 model=self._model_name,
                 contents=prompt,
@@ -127,12 +139,12 @@ class GeminiLLM(BaseLLM):
                 raise LLMGenerationError("Gemini returned an empty response")
             return response.text
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
 
         sub_batch_size = 32
-        all_embeddings: List[List[float]] = []
+        all_embeddings: list[list[float]] = []
 
         for i in range(0, len(texts), sub_batch_size):
             sub_texts = texts[i : i + sub_batch_size]
@@ -143,8 +155,8 @@ class GeminiLLM(BaseLLM):
 
         return all_embeddings
 
-    def _embed_batch_with_retry(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
-        last_exc: Optional[Exception] = None
+    def _embed_batch_with_retry(self, texts: list[str], max_retries: int = 5) -> list[list[float]]:
+        last_exc: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
                 if self._use_modern_client:
@@ -158,7 +170,7 @@ class GeminiLLM(BaseLLM):
                         return [res.embedding.values]
                     raise LLMGenerationError("Gemini returned no embeddings")
                 else:
-                    vectors: List[List[float]] = []
+                    vectors: list[list[float]] = []
                     model_name = (
                         self._embedding_model
                         if self._embedding_model.startswith("models/")
@@ -210,7 +222,7 @@ class OllamaLLM(BaseLLM):
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
     def generate(self, prompt: str) -> str:
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(1, self._max_retries + 2):
             future = self._executor.submit(self._call_model, prompt)
             try:
@@ -236,7 +248,7 @@ class OllamaLLM(BaseLLM):
             raise LLMGenerationError("Ollama returned an empty response")
         return content
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         try:
             response = self._client.embed(model=self._embedding_model, input=texts)
             embeddings = getattr(response, "embeddings", None)

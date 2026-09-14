@@ -1,4 +1,5 @@
 """rag_xper.core.retrieval package"""
+
 from rag_xper.core.retrieval.base_vector_store import BaseVectorStore
 from rag_xper.core.retrieval.bm25_retriever import BM25Retriever
 from rag_xper.core.retrieval.hybrid_fusion import reciprocal_rank_fusion

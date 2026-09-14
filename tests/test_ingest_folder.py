@@ -4,6 +4,7 @@ tests/test_ingest_folder.py for RAG_XPER
 Covers server-side folder ingestion: the orchestrator batch loop, the path guard
 that keeps requests inside DOCUMENTS_DIR, and the async job contract.
 """
+
 from importlib import import_module
 
 import pytest
@@ -131,11 +132,12 @@ def test_ingest_directory_reports_progress(tmp_path):
 # --- API contract ------------------------------------------------------------
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    from dataclasses import replace
+    import rag_xper.config as config_module
 
-    # Settings is a frozen dataclass, so swap the whole object rather than a field.
     monkeypatch.setattr(
-        api_module, "settings", replace(api_module.settings, documents_dir=str(tmp_path))
+        config_module,
+        "settings",
+        config_module.settings.model_copy(update={"documents_dir": str(tmp_path)}),
     )
     return TestClient(app)
 
@@ -152,7 +154,9 @@ def test_folder_ingest_returns_404_for_missing_subfolder(client, tmp_path):
 
 def test_folder_ingest_accepts_job_and_reports_result(client, tmp_path, monkeypatch):
     (tmp_path / "law.txt").write_text("المادة الخامسة", encoding="utf-8")
-    monkeypatch.setattr(api_module, "get_orchestrator", _orchestrator)
+    import rag_xper.api.state as state_module
+
+    monkeypatch.setattr(state_module, "get_orchestrator", _orchestrator)
 
     accepted = client.post("/v1/ingest/folder", json={})
     assert accepted.status_code == 202

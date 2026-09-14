@@ -3,10 +3,11 @@ tests/test_mysql_and_cache.py
 
 Unit and Integration Tests for In-Memory QueryCache and MySQL Database Layer.
 """
+
 from __future__ import annotations
 
 import time
-import pytest
+
 from fastapi.testclient import TestClient
 
 from rag_xper.api.app import app

@@ -1,10 +1,12 @@
 """
 tests/test_bm25_arabic.py for RAG_XPER
 """
+
 import shutil
 import tempfile
+
 from rag_xper.core.models import Chunk
-from rag_xper.core.retrieval.bm25_retriever import BM25Retriever, normalize_arabic, tokenize
+from rag_xper.core.retrieval.bm25_retriever import BM25Retriever, normalize_arabic
 
 
 def test_arabic_normalization():
@@ -19,7 +21,9 @@ def test_bm25_search_and_persistence():
     try:
         bm25 = BM25Retriever(persist_path=persist_file)
         c1 = Chunk(chunk_id="1", text="المادة 70 تنص على شروط قبول الشهادة في المحاكم", metadata={"source": "law.pdf"})
-        c2 = Chunk(chunk_id="2", text="العادات الذرية كتاب في تطوير الذات وبناء السلوكيات", metadata={"source": "habits.pdf"})
+        c2 = Chunk(
+            chunk_id="2", text="العادات الذرية كتاب في تطوير الذات وبناء السلوكيات", metadata={"source": "habits.pdf"}
+        )
 
         bm25.add_chunks([c1, c2])
 

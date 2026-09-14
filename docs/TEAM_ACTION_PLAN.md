@@ -34,16 +34,16 @@
 
 The system is respectable when all of the following are true:
 
-- [x] No API process runs without `API_KEYS`
-- [x] Qdrant and Redis are not published on `0.0.0.0`
-- [x] Uploading the same file twice skips, it does not re-index
-- [x] Deleting by original filename removes chunks from **both** Qdrant and BM25
-- [x] Legal documents are chunked by **article**, across page boundaries
-- [x] Answers use retrieved context only, cite `[1]`, and do not “correct” OCR
-- [x] There is a 20-question eval on real documents, with Recall@6 recorded
-- [x] Logs include `request_id`, and `/ready` actually checks Qdrant
-- [x] The Docker image can OCR scanned documents
-- [x] New tests pass in CI
+- [ ] No API process runs without `API_KEYS`
+- [ ] Qdrant and Redis are not published on `0.0.0.0`
+- [ ] Uploading the same file twice skips, it does not re-index
+- [ ] Deleting by original filename removes chunks from **both** Qdrant and BM25
+- [ ] Legal documents are chunked by **article**, across page boundaries
+- [ ] Answers use retrieved context only, cite `[1]`, and do not “correct” OCR
+- [ ] There is a 20-question eval on real documents, with Recall@6 recorded
+- [ ] Logs include `request_id`, and `/ready` actually checks Qdrant
+- [ ] The Docker image can OCR scanned documents
+- [ ] New tests pass in CI
 
 ---
 
@@ -428,7 +428,7 @@ Without this wave you will keep tuning `alpha` and chunk size by guesswork.
 
 **Steps:**
 
-1. In the image: `pip install -e ".[ocr-easy]"` (or install `requirements.txt` explicitly). Today it is `pip install -e .` with no extras.
+1. In the image: `uv sync --frozen --extra ocr-easy` (or `--extra all` for the full runtime stack).
 2. Do not construct `easyocr.Reader` in `__init__` until the first OCR page.
 3. PaddleOCR must honor `OCR_LANGUAGES`, not hardcoded `lang="ar"`.
 4. OCR page failures are counted in the job report, not only silent empty text.
@@ -538,20 +538,20 @@ Do not enter Wave 4 until T3.1 has a Recall@6 number.
 
 | ID | Task | Wave | Status | Owner |
 | -- | ---- | ---- | ------ | ----- |
-| T1.1 | Fail-closed auth + compare_digest | 1 | `Done` | Core Team |
-| T1.2 | Bind Compose to localhost | 1 | `Done` | DevOps |
-| T1.3 | `doc_id` + `file_hash` + correct delete | 1 | `Done` | Core Team |
-| T1.4 | Reload off + empty `EMBEDDING_DIM` | 1 | `Done` | Core Team |
-| T2.1 | Cross-page article chunking | 2 | `Done` | RAG Team |
-| T2.2 | Legal / auto default | 2 | `Done` | RAG Team |
-| T2.3 | Strict prompt + citations | 2 | `Done` | RAG Team |
-| T2.4 | Score threshold + `top_k` ≤ 10 | 2 | `Done` | Core Team |
-| T2.5 | Filter by filename / article | 2 | `Done` | Core Team |
-| T3.1 | Eval set of 20–50 questions | 3 | `Done` | QA / Domain |
-| T3.2 | JSON logs + request_id | 3 | `Done` | Core Team |
-| T3.3 | `/ready` + dimension check | 3 | `Done` | Core Team |
-| T3.4 | OCR in Docker + lazy init | 3 | `Done` | DevOps |
-| T3.5 | Rate limit & validation (max 2000 chars) | 3 | `Done` | Core Team |
+| T1.1 | Fail-closed auth + compare_digest | 1 | Todo | |
+| T1.2 | Bind Compose to localhost | 1 | Todo | |
+| T1.3 | `doc_id` + `file_hash` + correct delete | 1 | Todo | |
+| T1.4 | Reload off + empty `EMBEDDING_DIM` | 1 | Todo | |
+| T2.1 | Cross-page article chunking | 2 | Todo | |
+| T2.2 | Legal / auto default | 2 | Todo | |
+| T2.3 | Strict prompt + citations | 2 | Todo | |
+| T2.4 | Score threshold + `top_k` ≤ 10 | 2 | Todo | |
+| T2.5 | Filter by filename / article | 2 | Todo | |
+| T3.1 | Eval set of 20–50 questions | 3 | Todo | |
+| T3.2 | JSON logs + request_id | 3 | Todo | |
+| T3.3 | `/ready` + dimension check | 3 | Todo | |
+| T3.4 | OCR in Docker + lazy init | 3 | Todo | |
+| T3.5 | Rate limit | 3 | Todo | |
 
 ---
 

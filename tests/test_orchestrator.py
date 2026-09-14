@@ -1,10 +1,11 @@
 """
 tests/test_orchestrator.py for RAG_XPER
 """
-import pytest
+
 from unittest.mock import MagicMock
-from rag_xper.core.models import Chunk, RetrievedChunk, RAGResponse
+
 from rag_xper.core.generation.rag_orchestrator import RAGOrchestrator
+from rag_xper.core.models import Chunk, RAGResponse, RetrievedChunk
 
 
 def test_cot_parsing():

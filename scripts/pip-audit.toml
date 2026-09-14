@@ -1,0 +1,10 @@
+# Known upstream advisories without fixed chromadb releases at audit time.
+# Re-run `uv run pip-audit` after upgrading chromadb and remove entries when clean.
+
+[tool.pip-audit]
+ignore-vulns = [
+  "PYSEC-2026-311",
+  "PYSEC-2026-3813",
+  "PYSEC-2026-3814",
+  "PYSEC-2026-3815",
+]

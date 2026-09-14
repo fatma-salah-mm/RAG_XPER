@@ -1,15 +1,15 @@
 """
 tests/test_chunkers.py for RAG_XPER
 """
-import pytest
-from rag_xper.core.models import PageContent, SourceType
+
 from rag_xper.core.ingestion.text_chunker import (
-    RecursiveChunker,
-    ParentChildChunker,
     ArticleBasedChunker,
     AutoDetectChunker,
     ChunkerFactory,
+    ParentChildChunker,
+    RecursiveChunker,
 )
+from rag_xper.core.models import PageContent, SourceType
 
 
 def test_recursive_chunker():

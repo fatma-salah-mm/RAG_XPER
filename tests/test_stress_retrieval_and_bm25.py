@@ -10,15 +10,18 @@ Tests:
 - Zero-hit queries and stopword-only queries
 - Deduplication under stress with SHA-256 content hashes
 """
+
 from __future__ import annotations
 
 import shutil
 import tempfile
+
 import pytest
+
 from rag_xper.core.models import Chunk
-from rag_xper.core.retrieval.bm25_retriever import BM25Retriever, normalize_arabic, tokenize
+from rag_xper.core.retrieval.bm25_retriever import BM25Retriever, tokenize
 from rag_xper.core.retrieval.hybrid_fusion import reciprocal_rank_fusion
-from rag_xper.core.retrieval.qdrant_store_manager import QdrantStoreManager, _QDRANT_AVAILABLE
+from rag_xper.core.retrieval.qdrant_store_manager import _QDRANT_AVAILABLE, QdrantStoreManager
 
 
 def test_arabic_diacritics_and_orthography_variations():

@@ -11,6 +11,7 @@ Comprehensive Verification Suite covering Waves 1, 2, and 3 of TEAM_ACTION_PLAN.
 - T2.5: Explicit metadata filtering (filename & article_number)
 - T3.2: Structured JSON logging with request_id
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,6 @@ from rag_xper.core.exceptions import ConfigurationError
 from rag_xper.core.generation.rag_orchestrator import RAGOrchestrator
 from rag_xper.core.ingestion.text_chunker import ArticleBasedChunker
 from rag_xper.core.models import Chunk, PageContent, RetrievedChunk, SourceType
-from rag_xper.core.retrieval.bm25_retriever import BM25Retriever
 from rag_xper.utils.logger import JSONFormatter
 
 client = TestClient(app)
@@ -41,6 +41,19 @@ def test_t1_1_fail_closed_auth_validation():
     )
     with pytest.raises(ConfigurationError, match="REQUIRE_AUTH is true but API_KEYS is empty"):
         invalid_settings.validate()
+
+
+def test_t1_1_production_requires_auth_and_keys():
+    """Production APP_ENV must refuse to start without auth and API keys."""
+    prod_settings = Settings(
+        llm_provider="ollama",
+        app_env="production",
+        require_auth=False,
+        api_keys=(),
+        cors_origins=("http://localhost:8000",),
+    )
+    with pytest.raises(ConfigurationError, match="Production deployment requires"):
+        prod_settings.validate()
 
 
 def test_t1_4_safe_embedding_dim_derivation():
@@ -189,3 +202,18 @@ def test_t3_2_structured_json_logging():
     assert parsed["message"] == "Test execution message"
     assert parsed["request_id"] == "req-uuid-12345"
     assert "timestamp" in parsed
+
+
+def test_t3_2_request_id_propagates_via_middleware():
+    """T3.2: X-Request-ID header is echoed and bound to the logging context."""
+    from rag_xper.utils.logger import request_id_ctx, reset_request_id, set_request_id
+
+    token = set_request_id("req-from-test")
+    try:
+        assert request_id_ctx.get() == "req-from-test"
+    finally:
+        reset_request_id(token)
+
+    response = client.get("/health", headers={"X-Request-ID": "req-from-header"})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "req-from-header"

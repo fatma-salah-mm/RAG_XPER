@@ -3,6 +3,7 @@ rag_xper.core.exceptions
 
 Typed exception hierarchy for RAG_XPER.
 """
+
 from __future__ import annotations
 
 
