@@ -1,0 +1,118 @@
+# Production stack: Qdrant + Redis + MySQL + API (non-root, hardened defaults)
+#
+# Secrets: copy docker/.env.example → docker/.env (GEMINI_API_KEY + API_KEYS only).
+# MySQL credentials are wired inside this file; override via docker/.env if needed.
+#
+#   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up --build -d
+
+version: '3.8'
+
+x-mysql-credentials: &mysql-credentials
+  MYSQL_DATABASE: rag_xper_db
+  MYSQL_USER: rag_xper
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rag_xper_dev_pass}
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    container_name: rag_xper_qdrant
+    restart: unless-stopped
+    expose:
+      - "6333"
+      - "6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: rag_xper_redis
+    restart: unless-stopped
+    expose:
+      - "6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  mysql:
+    image: mysql:8.0
+    container_name: rag_xper_mysql
+    restart: unless-stopped
+    expose:
+      - "3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rag_xper_root_dev}
+      <<: *mysql-credentials
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: rag_xper_api
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      LLM_PROVIDER: gemini
+      VECTOR_STORE_TYPE: qdrant
+      QDRANT_URL: http://qdrant:6333
+      COLLECTION_NAME: rag_xper_documents
+      REQUIRE_AUTH: "true"
+      METRICS_REQUIRE_AUTH: "true"
+      DOCS_ENABLED: "false"
+      RATE_LIMIT_PER_MINUTE: "30"
+      CORS_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+      LOG_FORMAT: json
+      DOCUMENTS_DIR: /app/data/documents
+      REDIS_URL: redis://redis:6379/0
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_REQUIRED: "true"
+      RUN_DB_MIGRATIONS: "true"
+      <<: *mysql-credentials
+    volumes:
+      - ../data/documents:/app/data/documents:ro
+      - app_storage:/app/storage
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+
+volumes:
+  qdrant_storage:
+  mysql_data:
+  app_storage:

@@ -4,22 +4,20 @@ tests/eval/test_eval_retrieval.py
 Automated Evaluation Harness for RAG_XPER.
 Computes Recall@6 and MRR (Mean Reciprocal Rank) on the standardized 25-question legal dataset.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
-
-import pytest
 
 from rag_xper.core.models import Chunk
 from rag_xper.core.retrieval.bm25_retriever import BM25Retriever
 
 
-def load_eval_dataset() -> List[Dict[str, str]]:
+def load_eval_dataset() -> list[dict[str, str]]:
     dataset_path = Path(__file__).parent / "dataset.jsonl"
     questions = []
-    with open(dataset_path, "r", encoding="utf-8") as f:
+    with open(dataset_path, encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 questions.append(json.loads(line.strip()))
@@ -44,7 +42,7 @@ def test_retrieval_metrics_recall_at_6():
     retriever = BM25Retriever()
 
     # Index sample documents matching the expected articles and gold spans
-    chunks: List[Chunk] = []
+    chunks: list[Chunk] = []
     for item in dataset:
         chunk_text = f"المادة {item['expected_article']}: {item['gold_span']} في شأن {item['question']}"
         chunks.append(
@@ -65,7 +63,7 @@ def test_retrieval_metrics_recall_at_6():
     # Evaluate each question
     top_k = 6
     recall_hits = 0
-    reciprocal_ranks: List[float] = []
+    reciprocal_ranks: list[float] = []
 
     for item in dataset:
         hits = retriever.search(item["question"], top_k=top_k)

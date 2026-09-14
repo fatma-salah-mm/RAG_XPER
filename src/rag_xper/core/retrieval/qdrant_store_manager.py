@@ -4,15 +4,15 @@ rag_xper.core.retrieval.qdrant_store_manager
 High-performance Qdrant Vector Store supporting both Embedded local storage and Remote Server mode,
 payload-based deduplication, BM25 disk persistence, and Reciprocal Rank Fusion.
 """
+
 from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 from rag_xper.core.exceptions import (
-    ConfigurationError,
     EmbeddingGenerationError,
     VectorDBConnectionError,
 )
@@ -27,6 +27,7 @@ logger = get_logger(__name__)
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.http import models as qmodels
+
     _QDRANT_AVAILABLE = True
 except ImportError:
     _QDRANT_AVAILABLE = False
@@ -38,14 +39,14 @@ class QdrantStoreManager(BaseVectorStore):
     def __init__(
         self,
         collection_name: str = "rag_xper_documents",
-        storage_path: Optional[str] = "./storage/qdrant_db",
-        url: Optional[str] = None,
+        storage_path: str | None = "./storage/qdrant_db",
+        url: str | None = None,
         embedding_dim: int = 3072,
-        embedding_fn: Optional[Callable[[List[str]], List[List[float]]]] = None,
+        embedding_fn: Callable[[list[str]], list[list[float]]] | None = None,
     ) -> None:
         if not _QDRANT_AVAILABLE:
             raise VectorDBConnectionError(
-                "qdrant-client is not installed. Please install it with: pip install qdrant-client"
+                "qdrant-client is not installed. Run: uv sync"
             )
 
         self._collection_name = collection_name
@@ -81,7 +82,8 @@ class QdrantStoreManager(BaseVectorStore):
             if not exists:
                 logger.info(
                     "Creating Qdrant collection '%s' (dim=%d, distance=Cosine)",
-                    self._collection_name, self._embedding_dim,
+                    self._collection_name,
+                    self._embedding_dim,
                 )
                 self._client.create_collection(
                     collection_name=self._collection_name,
@@ -95,7 +97,7 @@ class QdrantStoreManager(BaseVectorStore):
 
     def _sync_bm25_from_qdrant(self) -> None:
         try:
-            all_chunks: List[Chunk] = []
+            all_chunks: list[Chunk] = []
             offset = None
             while True:
                 scroll_res = self._client.scroll(
@@ -124,7 +126,7 @@ class QdrantStoreManager(BaseVectorStore):
         except Exception as exc:
             logger.warning("Could not sync BM25 index from Qdrant: %s", exc)
 
-    def is_file_ingested(self, file_path: str, content_hash: Optional[str] = None) -> bool:
+    def is_file_ingested(self, file_path: str, content_hash: str | None = None) -> bool:
         """Filter-based deduplication checking either file_hash, doc_id, or normalized filename."""
         try:
             # 1. Check content/file hash if provided
@@ -178,7 +180,7 @@ class QdrantStoreManager(BaseVectorStore):
             logger.warning("Error checking if file ingested in Qdrant: %s", exc)
             return False
 
-    def upsert_chunks(self, chunks: List[Chunk]) -> int:
+    def upsert_chunks(self, chunks: list[Chunk]) -> int:
         if not chunks:
             return 0
 
@@ -192,11 +194,12 @@ class QdrantStoreManager(BaseVectorStore):
         if embeddings and len(embeddings[0]) != self._embedding_dim:
             logger.warning(
                 "Embedding dim mismatch: received %d, collection configured for %d. Adjusting.",
-                len(embeddings[0]), self._embedding_dim,
+                len(embeddings[0]),
+                self._embedding_dim,
             )
             self._embedding_dim = len(embeddings[0])
 
-        points: List[qmodels.PointStruct] = []
+        points: list[qmodels.PointStruct] = []
         for chunk, emb in zip(chunks, embeddings):
             payload = dict(chunk.metadata)
             payload["text"] = chunk.text
@@ -223,7 +226,7 @@ class QdrantStoreManager(BaseVectorStore):
         except Exception as exc:
             raise VectorDBConnectionError(f"Failed to upsert points into Qdrant: {exc}") from exc
 
-    def _search_points(self, query_vector: List[float], limit: int):
+    def _search_points(self, query_vector: list[float], limit: int):
         if hasattr(self._client, "query_points"):
             res = self._client.query_points(
                 collection_name=self._collection_name,
@@ -250,7 +253,7 @@ class QdrantStoreManager(BaseVectorStore):
         else:
             raise AttributeError("QdrantClient has no search or query_points method.")
 
-    def similarity_search(self, query: str, top_k: int = 4) -> List[RetrievedChunk]:
+    def similarity_search(self, query: str, top_k: int = 4) -> list[RetrievedChunk]:
         if self._embedding_fn is None:
             raise EmbeddingGenerationError("No embedding function provided.")
 
@@ -263,7 +266,7 @@ class QdrantStoreManager(BaseVectorStore):
 
         try:
             hits = self._search_points(query_vector=query_vector, limit=top_k)
-            results: List[RetrievedChunk] = []
+            results: list[RetrievedChunk] = []
             for hit in hits:
                 payload = hit.payload or {}
                 text = payload.get("text", "")
@@ -285,7 +288,7 @@ class QdrantStoreManager(BaseVectorStore):
         top_k: int = 6,
         fetch_k: int = 25,
         alpha: float = 0.5,
-    ) -> List[RetrievedChunk]:
+    ) -> list[RetrievedChunk]:
         """Hybrid search combining BM25 and Qdrant Dense Vector search using shared RRF."""
         bm25_hits = self._bm25.search(query, top_k=fetch_k)
 
@@ -326,9 +329,9 @@ class QdrantStoreManager(BaseVectorStore):
         except Exception as exc:
             raise VectorDBConnectionError(f"Failed to delete file '{file_path}' from Qdrant: {exc}") from exc
 
-    def get_indexed_documents(self) -> Dict[str, int]:
+    def get_indexed_documents(self) -> dict[str, int]:
         """Fetch document counts accurately from Qdrant scroll and BM25."""
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         try:
             offset = None
             while True:

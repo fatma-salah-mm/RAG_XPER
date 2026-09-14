@@ -6,6 +6,7 @@ Enterprise Multi-Modal RAG Engine:
 - Retrieval: Qdrant Server/Embedded, ChromaDB, Persistent BM25, Shared RRF
 - Generation: Chain-of-Thought LLM Gateway (Gemini, Ollama), Orchestrator
 """
+
 from rag_xper.core.exceptions import (
     ChunkingError,
     ConfigurationError,

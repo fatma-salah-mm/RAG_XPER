@@ -1,8 +1,13 @@
+# Dev / single-node stack: Qdrant + API (SQLite fallback, in-memory jobs)
+#
+# Secrets: copy docker/.env.example → docker/.env
+#   docker compose -f docker/docker-compose.yml --env-file docker/.env up --build -d
+
 version: '3.8'
 
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.12.5
     container_name: rag_xper_qdrant
     restart: unless-stopped
     expose:
@@ -13,13 +18,6 @@ services:
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
 
-  redis:
-    image: redis:7-alpine
-    container_name: rag_xper_redis
-    restart: unless-stopped
-    expose:
-      - "6379"
-
   api:
     build:
       context: ..
@@ -28,20 +26,24 @@ services:
     restart: unless-stopped
     depends_on:
       - qdrant
-      - redis
     ports:
       - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
     environment:
-      - LLM_PROVIDER=gemini
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - VECTOR_STORE_TYPE=qdrant
-      - QDRANT_URL=http://qdrant:6333
-      - COLLECTION_NAME=rag_xper_documents
-      - REDIS_URL=redis://redis:6379
-      - API_KEYS=${API_KEYS}
-      - DOCUMENTS_DIR=/app/data/documents
+      APP_ENV: production
+      LLM_PROVIDER: gemini
+      VECTOR_STORE_TYPE: qdrant
+      QDRANT_URL: http://qdrant:6333
+      COLLECTION_NAME: rag_xper_documents
+      REQUIRE_AUTH: "true"
+      METRICS_REQUIRE_AUTH: "true"
+      DOCS_ENABLED: "false"
+      RATE_LIMIT_PER_MINUTE: "30"
+      CORS_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+      LOG_FORMAT: json
+      DOCUMENTS_DIR: /app/data/documents
     volumes:
-      # Stage PDFs on the host here, then index them with POST /v1/ingest/folder.
       - ../data/documents:/app/data/documents:ro
       - app_storage:/app/storage
 

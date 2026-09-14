@@ -1,8 +1,9 @@
 """
 tests/test_api.py for RAG_XPER
 """
-import pytest
+
 from fastapi.testclient import TestClient
+
 from rag_xper.api.app import app
 
 client = TestClient(app)

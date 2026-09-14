@@ -3,11 +3,12 @@ rag_xper.core.retrieval.vector_store_manager
 
 ChromaDB Vector Store Manager and Unified VectorStoreFactory for RAG_XPER.
 """
+
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 from rag_xper.core.exceptions import (
     ConfigurationError,
@@ -26,6 +27,7 @@ logger = get_logger(__name__)
 try:
     import chromadb
     from chromadb.config import Settings as ChromaSettings
+
     _CHROMA_AVAILABLE = True
 except ImportError:
     _CHROMA_AVAILABLE = False
@@ -38,7 +40,7 @@ class ChromaVectorStoreManager(BaseVectorStore):
         self,
         persist_directory: str = "./storage/chroma_db",
         collection_name: str = "rag_xper_documents",
-        embedding_fn: Optional[Callable[[List[str]], List[List[float]]]] = None,
+        embedding_fn: Callable[[list[str]], list[list[float]]] | None = None,
     ) -> None:
         if not _CHROMA_AVAILABLE:
             raise VectorDBConnectionError("chromadb is not installed. Please install chromadb.")
@@ -70,17 +72,14 @@ class ChromaVectorStoreManager(BaseVectorStore):
             ids = records.get("ids") or []
             metas = records.get("metadatas") or []
 
-            chunks = [
-                Chunk(chunk_id=cid, text=doc, metadata=meta or {})
-                for cid, doc, meta in zip(ids, docs, metas)
-            ]
+            chunks = [Chunk(chunk_id=cid, text=doc, metadata=meta or {}) for cid, doc, meta in zip(ids, docs, metas)]
             if chunks:
                 self._bm25.add_chunks(chunks)
                 logger.info("Synced %d chunks from ChromaDB into BM25 index", len(chunks))
         except Exception as exc:
             logger.warning("Could not sync BM25 from ChromaDB: %s", exc)
 
-    def is_file_ingested(self, file_path: str, content_hash: Optional[str] = None) -> bool:
+    def is_file_ingested(self, file_path: str, content_hash: str | None = None) -> bool:
         try:
             norm_name = Path(file_path).name.lower()
             if content_hash:
@@ -99,7 +98,7 @@ class ChromaVectorStoreManager(BaseVectorStore):
         except Exception:
             return False
 
-    def upsert_chunks(self, chunks: List[Chunk]) -> int:
+    def upsert_chunks(self, chunks: list[Chunk]) -> int:
         if not chunks:
             return 0
 
@@ -115,7 +114,7 @@ class ChromaVectorStoreManager(BaseVectorStore):
         self._bm25.add_chunks(chunks)
         return len(chunks)
 
-    def similarity_search(self, query: str, top_k: int = 4) -> List[RetrievedChunk]:
+    def similarity_search(self, query: str, top_k: int = 4) -> list[RetrievedChunk]:
         if self._embedding_fn is None:
             raise EmbeddingGenerationError("No embedding function provided.")
 
@@ -126,7 +125,7 @@ class ChromaVectorStoreManager(BaseVectorStore):
             include=["documents", "metadatas", "distances"],
         )
 
-        retrieved: List[RetrievedChunk] = []
+        retrieved: list[RetrievedChunk] = []
         docs = results.get("documents", [[]])[0]
         ids = results.get("ids", [[]])[0]
         metas = results.get("metadatas", [[]])[0]
@@ -144,7 +143,7 @@ class ChromaVectorStoreManager(BaseVectorStore):
         top_k: int = 6,
         fetch_k: int = 25,
         alpha: float = 0.5,
-    ) -> List[RetrievedChunk]:
+    ) -> list[RetrievedChunk]:
         bm25_hits = self._bm25.search(query, top_k=fetch_k)
 
         query_vector = self._embedding_fn([query])[0]
@@ -177,7 +176,7 @@ class VectorStoreFactory:
     @staticmethod
     def create_vector_store(
         config,
-        embedding_fn: Optional[Callable[[List[str]], List[List[float]]]] = None,
+        embedding_fn: Callable[[list[str]], list[list[float]]] | None = None,
     ) -> BaseVectorStore:
         store_type = getattr(config, "vector_store_type", "qdrant").lower()
 

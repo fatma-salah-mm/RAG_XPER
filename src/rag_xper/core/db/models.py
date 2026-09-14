@@ -3,9 +3,11 @@ rag_xper.core.db.models
 
 SQLAlchemy Models for Books, Documents Catalog, and Query Logs.
 """
+
 from __future__ import annotations
 
 import datetime
+
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import declarative_base
 

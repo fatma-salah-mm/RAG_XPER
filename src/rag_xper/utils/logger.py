@@ -3,8 +3,10 @@ rag_xper.utils.logger
 
 Unified logging configuration for RAG_XPER supporting standard text and structured JSON formats.
 """
+
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -12,6 +14,16 @@ import sys
 
 _LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 _configured = False
+
+request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
+
+
+class RequestIdFilter(logging.Filter):
+    """Attach the current request_id context variable to every log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_ctx.get("")
+        return True
 
 
 class JSONFormatter(logging.Formatter):
@@ -49,9 +61,20 @@ def _configure_root() -> None:
     root = logging.getLogger()
     root.setLevel(level)
     if not root.handlers:
+        handler.addFilter(RequestIdFilter())
         root.addHandler(handler)
 
     _configured = True
+
+
+def set_request_id(request_id: str) -> contextvars.Token:
+    """Bind request_id for the current async context."""
+    return request_id_ctx.set(request_id)
+
+
+def reset_request_id(token: contextvars.Token) -> None:
+    """Restore the previous request_id after a request completes."""
+    request_id_ctx.reset(token)
 
 
 def get_logger(name: str) -> logging.Logger:

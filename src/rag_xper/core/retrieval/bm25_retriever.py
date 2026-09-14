@@ -4,14 +4,13 @@ rag_xper.core.retrieval.bm25_retriever
 Arabic/English BM25 Okapi retriever with normalization, stemming, ordinal expansion,
 and persistent on-disk serialization.
 """
+
 from __future__ import annotations
 
 import math
-import os
 import pickle
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 from rag_xper.core.models import Chunk
 from rag_xper.utils.logger import get_logger
@@ -19,20 +18,69 @@ from rag_xper.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # Arabic text normalization tables
-_NORM_MAP = str.maketrans({
-    "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
-    "ى": "ي", "ئ": "ي", "ؤ": "و", "ة": "ه",
-    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
-    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
-})
+_NORM_MAP = str.maketrans(
+    {
+        "أ": "ا",
+        "إ": "ا",
+        "آ": "ا",
+        "ٱ": "ا",
+        "ى": "ي",
+        "ئ": "ي",
+        "ؤ": "و",
+        "ة": "ه",
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+    }
+)
 
 _TASHKEEL_RE = re.compile(r"[\u0617-\u061A\u064B-\u0652\u0670\u0640]")
 
-_ARABIC_STOPWORDS: Set[str] = {
-    "من", "الى", "إلى", "عن", "على", "في", "مع", "هذا", "هذه", "ذلك",
-    "التي", "الذي", "الذين", "اللذين", "ان", "أن", "كان", "كانت",
-    "او", "أو", "ثم", "حيث", "كل", "لم", "لن", "لا", "ما", "هل",
-    "ماذا", "كيف", "متى", "اين", "أين", "لماذا", "هو", "هي", "هم",
+_ARABIC_STOPWORDS: set[str] = {
+    "من",
+    "الى",
+    "إلى",
+    "عن",
+    "على",
+    "في",
+    "مع",
+    "هذا",
+    "هذه",
+    "ذلك",
+    "التي",
+    "الذي",
+    "الذين",
+    "اللذين",
+    "ان",
+    "أن",
+    "كان",
+    "كانت",
+    "او",
+    "أو",
+    "ثم",
+    "حيث",
+    "كل",
+    "لم",
+    "لن",
+    "لا",
+    "ما",
+    "هل",
+    "ماذا",
+    "كيف",
+    "متى",
+    "اين",
+    "أين",
+    "لماذا",
+    "هو",
+    "هي",
+    "هم",
 }
 
 _NUM_TO_WORDS = {
@@ -74,26 +122,30 @@ def stem_arabic_word(word: str) -> str:
     # Prefix stripping
     if w.startswith("ال") and len(w) > 4:
         w = w[2:]
-    elif (w.startswith("وال") or w.startswith("فال") or w.startswith("بال") or w.startswith("كال") or w.startswith("لل")) and len(w) > 5:
+    elif (
+        w.startswith("وال") or w.startswith("فال") or w.startswith("بال") or w.startswith("كال") or w.startswith("لل")
+    ) and len(w) > 5:
         w = w[3:] if not w.startswith("لل") else w[2:]
-    elif (w.startswith("و") or w.startswith("ف") or w.startswith("ب") or w.startswith("ك") or w.startswith("ل")) and len(w) > 4:
+    elif (
+        w.startswith("و") or w.startswith("ف") or w.startswith("ب") or w.startswith("ك") or w.startswith("ل")
+    ) and len(w) > 4:
         w = w[1:]
 
     # Suffix stripping
     for suffix in ["هم", "هن", "كم", "كن", "نا", "ها", "ات", "ون", "ين", "ان", "يه", "يا", "ه", "ي"]:
         if w.endswith(suffix) and len(w) - len(suffix) >= 3:
-            w = w[:-len(suffix)]
+            w = w[: -len(suffix)]
             break
 
     return w
 
 
-def tokenize(text: str, expand_numbers: bool = True) -> List[str]:
+def tokenize(text: str, expand_numbers: bool = True) -> list[str]:
     """Tokenize and normalize text with Arabic stemming and number expansion."""
     norm_text = normalize_arabic(text)
     raw_tokens = re.findall(r"\b[\w\u0621-\u064A0-9]+\b", norm_text)
 
-    tokens: List[str] = []
+    tokens: list[str] = []
     for tok in raw_tokens:
         if tok in _ARABIC_STOPWORDS:
             continue
@@ -127,23 +179,23 @@ class BM25Retriever:
         self,
         k1: float = 1.5,
         b: float = 0.75,
-        persist_path: Optional[str] = None,
+        persist_path: str | None = None,
     ) -> None:
         self.k1 = k1
         self.b = b
         self._persist_path = persist_path
 
-        self._chunks: List[Chunk] = []
-        self._corpus_tokens: List[List[str]] = []
-        self._doc_lens: List[int] = []
+        self._chunks: list[Chunk] = []
+        self._corpus_tokens: list[list[str]] = []
+        self._doc_lens: list[int] = []
         self._avgdl: float = 0.0
-        self._df: Dict[str, int] = {}
-        self._idf: Dict[str, float] = {}
+        self._df: dict[str, int] = {}
+        self._idf: dict[str, float] = {}
 
         if self._persist_path and Path(self._persist_path).exists():
             self.load()
 
-    def add_chunks(self, chunks: List[Chunk]) -> None:
+    def add_chunks(self, chunks: list[Chunk]) -> None:
         """Add new chunks to the BM25 index and persist."""
         for chunk in chunks:
             tokens = tokenize(chunk.text)
@@ -172,7 +224,7 @@ class BM25Retriever:
         for term, freq in self._df.items():
             self._idf[term] = math.log(1.0 + (n_docs - freq + 0.5) / (freq + 0.5))
 
-    def search(self, query: str, top_k: int = 6) -> List[Tuple[Chunk, float, int]]:
+    def search(self, query: str, top_k: int = 6) -> list[tuple[Chunk, float, int]]:
         """Search index and return List of (Chunk, score, rank)."""
         if not self._chunks:
             return []
@@ -235,14 +287,17 @@ class BM25Retriever:
             path = Path(self._persist_path)
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "wb") as f:
-                pickle.dump({
-                    "chunks": self._chunks,
-                    "corpus_tokens": self._corpus_tokens,
-                    "doc_lens": self._doc_lens,
-                    "avgdl": self._avgdl,
-                    "df": self._df,
-                    "idf": self._idf,
-                }, f)
+                pickle.dump(
+                    {
+                        "chunks": self._chunks,
+                        "corpus_tokens": self._corpus_tokens,
+                        "doc_lens": self._doc_lens,
+                        "avgdl": self._avgdl,
+                        "df": self._df,
+                        "idf": self._idf,
+                    },
+                    f,
+                )
             logger.debug("Persisted BM25 index (%d docs) to '%s'", len(self._chunks), path.name)
         except Exception as exc:
             logger.warning("Failed to persist BM25 index: %s", exc)
@@ -253,7 +308,7 @@ class BM25Retriever:
             return
         try:
             with open(self._persist_path, "rb") as f:
-                data = pickle.load(f)
+                data = pickle.load(f)  # nosec B301
             self._chunks = data.get("chunks", [])
             self._corpus_tokens = data.get("corpus_tokens", [])
             self._doc_lens = data.get("doc_lens", [])

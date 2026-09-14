@@ -10,25 +10,25 @@ Tests:
 - Complex Arabic legal patterns with sub-articles (e.g. المادة 12 مكرر, البند 5-أ)
 - Deep parent-child relationship integrity and deduplication
 """
+
 from __future__ import annotations
 
-import pytest
-from rag_xper.core.models import PageContent, SourceType
 from rag_xper.core.ingestion.text_chunker import (
     ArticleBasedChunker,
-    AutoDetectChunker,
     ChunkerFactory,
     ParentChildChunker,
     RecursiveChunker,
-    compute_content_hash,
 )
+from rag_xper.core.models import PageContent, SourceType
 
 
 def test_empty_and_whitespace_pages():
     """Verify chunkers handle empty or whitespace-only inputs without crashing."""
     empty_pages = [
         PageContent(source_path="empty.pdf", page_number=1, text="", source_type=SourceType.NATIVE_TEXT),
-        PageContent(source_path="spaces.pdf", page_number=2, text="   \n\n\t  \n  ", source_type=SourceType.NATIVE_TEXT),
+        PageContent(
+            source_path="spaces.pdf", page_number=2, text="   \n\n\t  \n  ", source_type=SourceType.NATIVE_TEXT
+        ),
     ]
 
     for strategy in ["recursive", "parent_child", "article_based", "auto"]:
@@ -114,7 +114,9 @@ def test_parent_child_deep_integrity():
         "ما لم يوجد اتفاق أو نص يقضي بغير ذلك. ويجب في هذه الحالة تقديم محرر رسمي أو عرفي مكتوب وموقع عليه من أطراف الالتزام. "
         "ويستثنى من ذلك الحالات التي يتعذر فيها الحصول على دليل كتابي بسبب مانع أدبي أو مادي أو فقدان السند لسبب أجنبي."
     )
-    page = PageContent(source_path="evidence.pdf", page_number=70, text=long_law_text, source_type=SourceType.NATIVE_TEXT)
+    page = PageContent(
+        source_path="evidence.pdf", page_number=70, text=long_law_text, source_type=SourceType.NATIVE_TEXT
+    )
 
     chunker = ParentChildChunker(parent_chunk_size=200, child_chunk_size=70, child_overlap=15)
     chunks = chunker.chunk_pages([page])

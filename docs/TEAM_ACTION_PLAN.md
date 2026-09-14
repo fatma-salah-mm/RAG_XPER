@@ -428,7 +428,7 @@ Without this wave you will keep tuning `alpha` and chunk size by guesswork.
 
 **Steps:**
 
-1. In the image: `pip install -e ".[ocr-easy]"` (or install `requirements.txt` explicitly). Today it is `pip install -e .` with no extras.
+1. In the image: `uv sync --frozen --extra ocr-easy` (or `--extra all` for the full runtime stack).
 2. Do not construct `easyocr.Reader` in `__init__` until the first OCR page.
 3. PaddleOCR must honor `OCR_LANGUAGES`, not hardcoded `lang="ar"`.
 4. OCR page failures are counted in the job report, not only silent empty text.

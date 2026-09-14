@@ -1,11 +1,14 @@
 """
 tests/test_qdrant_search.py for RAG_XPER
 """
+
 import shutil
 import tempfile
+
 import pytest
+
 from rag_xper.core.models import Chunk
-from rag_xper.core.retrieval.qdrant_store_manager import QdrantStoreManager, _QDRANT_AVAILABLE
+from rag_xper.core.retrieval.qdrant_store_manager import _QDRANT_AVAILABLE, QdrantStoreManager
 
 
 @pytest.mark.skipif(not _QDRANT_AVAILABLE, reason="qdrant-client not installed")

@@ -5,13 +5,14 @@ High-level RAG Orchestrator coordinating Document Ingestion, Modular Chunking,
 Deduplication via Document Identity (doc_id, file_hash, filename),
 Hybrid Retrieval (BM25 + Qdrant RRF), and Chain-of-Thought Generation.
 """
+
 from __future__ import annotations
 
 import hashlib
 import re
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 
 from rag_xper.core.exceptions import DocumentExtractionError, OCRExtractionError
 from rag_xper.core.generation.llm_interface import BaseLLM
@@ -67,9 +68,9 @@ class RAGOrchestrator:
     def ingest_file(
         self,
         file_path: str,
-        strategy: Optional[str] = None,
+        strategy: str | None = None,
         force: bool = False,
-        original_filename: Optional[str] = None,
+        original_filename: str | None = None,
     ) -> int:
         """Ingest a file with stable document identity (doc_id, file_hash) and modular chunking."""
         path = Path(file_path)
@@ -137,24 +138,21 @@ class RAGOrchestrator:
     def ingest_directory(
         self,
         directory: str,
-        strategy: Optional[str] = None,
+        strategy: str | None = None,
         recursive: bool = False,
         force: bool = False,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> Dict[str, object]:
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> dict[str, object]:
         """Ingest every supported file in a folder."""
         root = Path(directory)
         if not root.is_dir():
             raise DocumentExtractionError(f"Directory not found: {directory}")
 
         pattern = "**/*" if recursive else "*"
-        files = sorted(
-            p for p in root.glob(pattern)
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
-        )
+        files = sorted(p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS)
         logger.info("Scanning '%s' -> %d supported file(s)", root, len(files))
 
-        report: Dict[str, object] = {
+        report: dict[str, object] = {
             "directory": str(root),
             "files": [],
             "ingested": 0,
@@ -173,21 +171,22 @@ class RAGOrchestrator:
             except Exception as exc:
                 logger.error("Failed to ingest '%s': %s", path.name, exc)
                 report["failed"] += 1
-                report["files"].append(
-                    {"file": path.name, "status": "failed", "chunks": 0, "error": str(exc)}
-                )
+                report["files"].append({"file": path.name, "status": "failed", "chunks": 0, "error": str(exc)})
 
             if progress_callback:
                 progress_callback(index, len(files))
 
         logger.info(
             "Directory ingest complete: %d ingested, %d skipped, %d failed, %d chunks",
-            report["ingested"], report["skipped"], report["failed"], report["total_chunks"],
+            report["ingested"],
+            report["skipped"],
+            report["failed"],
+            report["total_chunks"],
         )
         return report
 
-    def _resolve_ocr_pages(self, pages: List[PageContent]) -> List[PageContent]:
-        resolved: List[PageContent] = []
+    def _resolve_ocr_pages(self, pages: list[PageContent]) -> list[PageContent]:
+        resolved: list[PageContent] = []
         for page in pages:
             if page.source_type == SourceType.OCR:
                 try:
@@ -211,12 +210,12 @@ class RAGOrchestrator:
         self,
         question: str,
         top_k: int = 6,
-        use_hybrid: Optional[bool] = None,
-        filter_filename: Optional[str] = None,
-        filter_article: Optional[str] = None,
+        use_hybrid: bool | None = None,
+        filter_filename: str | None = None,
+        filter_article: str | None = None,
     ) -> RAGResponse:
         """Query knowledge base and generate faithful CoT response with strict citations."""
-        is_arabic = any("\u0600" <= ch <= "\u06FF" for ch in question)
+        is_arabic = any("\u0600" <= ch <= "\u06ff" for ch in question)
         empty_answer = (
             "لم يتم العثور على أي معلومات ذات صلة في المستندات المرفقة."
             if is_arabic
@@ -228,11 +227,7 @@ class RAGOrchestrator:
             else "No matching passages or sources found in the database."
         )
 
-        should_hybrid = (
-            use_hybrid
-            if use_hybrid is not None
-            else getattr(self._settings, "use_hybrid_search", True)
-        )
+        should_hybrid = use_hybrid if use_hybrid is not None else getattr(self._settings, "use_hybrid_search", True)
 
         # 1. Retrieval
         if should_hybrid:
@@ -249,14 +244,16 @@ class RAGOrchestrator:
         if filter_filename:
             fn_norm = Path(filter_filename).name.lower()
             retrieved = [
-                r for r in retrieved
+                r
+                for r in retrieved
                 if r.chunk.metadata.get("filename", "").lower() == fn_norm
                 or Path(r.chunk.metadata.get("source", "")).name.lower() == fn_norm
             ]
 
         if filter_article:
             retrieved = [
-                r for r in retrieved
+                r
+                for r in retrieved
                 if str(r.chunk.metadata.get("article_number", "")).strip() == str(filter_article).strip()
             ]
 
@@ -273,9 +270,9 @@ class RAGOrchestrator:
             )
 
         # 2. Parent-Child Context Resolution & Deduplication
-        context_blocks: List[str] = []
+        context_blocks: list[str] = []
         seen_parents = set()
-        resolved_sources: List[RetrievedChunk] = []
+        resolved_sources: list[RetrievedChunk] = []
 
         for i, r in enumerate(retrieved, start=1):
             meta = r.chunk.metadata or {}
@@ -319,7 +316,7 @@ class RAGOrchestrator:
             query=question,
         )
 
-    def _parse_cot_response(self, raw_text: str, is_arabic: bool = True) -> tuple[Optional[str], str]:
+    def _parse_cot_response(self, raw_text: str, is_arabic: bool = True) -> tuple[str | None, str]:
         clean_text = raw_text.strip()
         pattern = r"(?:Reasoning|التحليل|التفكير):\s*(.*?)\s*(?:Answer|الإجابة|النتيجة):\s*(.*)"
         match = re.search(pattern, clean_text, re.DOTALL | re.IGNORECASE)

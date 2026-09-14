@@ -8,10 +8,13 @@ Tests:
 - Extraction error propagation on non-existent files
 - Parsing of unstructured LLM completions
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+
 import pytest
+
 from rag_xper.core.exceptions import DocumentExtractionError
 from rag_xper.core.generation.rag_orchestrator import RAGOrchestrator
 from rag_xper.core.models import Chunk, RetrievedChunk

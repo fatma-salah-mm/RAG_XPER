@@ -4,6 +4,7 @@ rag_xper.bootstrap
 Single, unified wiring point that builds and connects all components of the RAG pipeline.
 Decouples core initialization from CLI, Web UI, and REST API.
 """
+
 from __future__ import annotations
 
 from rag_xper.config import settings

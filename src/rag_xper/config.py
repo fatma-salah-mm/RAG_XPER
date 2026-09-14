@@ -4,111 +4,166 @@ rag_xper.config
 Centralised configuration for the RAG_XPER pipeline, loaded from environment
 variables with sensible defaults and fast validation.
 """
+
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
-from dotenv import load_dotenv
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from rag_xper.core.exceptions import ConfigurationError
 
-load_dotenv()
 
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-@dataclass(frozen=True)
-class Settings:
     # --- Provider selection ---
-    llm_provider: str = os.getenv("LLM_PROVIDER", "gemini")  # "gemini" | "ollama"
+    llm_provider: Literal["gemini", "ollama"] = "gemini"
 
     # --- LLM (Gemini) ---
-    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_embedding_model: str = "gemini-embedding-001"
 
-    # --- Embedding Dimension (Phase 1 auto-parameterization) ---
+    # --- Embedding Dimension ---
     embedding_dim: int = 0
 
-    def __post_init__(self) -> None:
-        dim_env = os.getenv("EMBEDDING_DIM", "").strip()
-        if dim_env.isdigit() and int(dim_env) > 0:
-            object.__setattr__(self, "embedding_dim", int(dim_env))
-        elif self.embedding_dim == 0:
-            object.__setattr__(self, "embedding_dim", 3072 if self.llm_provider == "gemini" else 768)
+    # --- LLM (Ollama) ---
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1"
+    ollama_embedding_model: str = "nomic-embed-text"
 
-    # --- LLM (Ollama -- fully local, no API key) ---
-    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.1")
-    ollama_embedding_model: str = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
-
-    # --- LLM (shared across providers) ---
-    llm_timeout_seconds: int = int(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
-    llm_max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    # --- LLM (shared) ---
+    llm_timeout_seconds: int = 30
+    llm_max_retries: int = 3
 
     # --- OCR ---
-    ocr_engine: str = os.getenv("OCR_ENGINE", "easyocr")  # "easyocr" | "paddleocr"
-    ocr_languages: tuple = tuple(os.getenv("OCR_LANGUAGES", "en,ar").split(","))
-    native_text_min_chars: int = int(os.getenv("NATIVE_TEXT_MIN_CHARS", "20"))
-    ocr_render_zoom: float = float(os.getenv("OCR_RENDER_ZOOM", "2.5"))
+    ocr_engine: str = "easyocr"
+    ocr_languages: tuple[str, ...] = ("en", "ar")
+    native_text_min_chars: int = 20
+    ocr_render_zoom: float = 2.5
 
-    # --- Vector Store (Qdrant & ChromaDB) ---
-    vector_store_type: str = os.getenv("VECTOR_STORE_TYPE", "qdrant").lower()  # "qdrant" | "chromadb"
-    qdrant_url: Optional[str] = os.getenv("QDRANT_URL", None)
-    qdrant_storage_path: str = os.getenv("QDRANT_STORAGE_PATH", "./storage/qdrant_db")
-    vector_db_path: str = os.getenv("VECTOR_DB_PATH", "./storage/chroma_db")
-    collection_name: str = os.getenv("COLLECTION_NAME", "rag_xper_documents")
+    # --- Vector Store ---
+    vector_store_type: Literal["qdrant", "chromadb"] = "qdrant"
+    qdrant_url: str | None = None
+    qdrant_storage_path: str = "./storage/qdrant_db"
+    vector_db_path: str = "./storage/chroma_db"
+    collection_name: str = "rag_xper_documents"
 
-    # --- Modular Chunking Strategy ---
-    chunking_strategy: str = os.getenv("CHUNKING_STRATEGY", "auto").lower()
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "1000"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "150"))
-    parent_chunk_size: int = int(os.getenv("PARENT_CHUNK_SIZE", "1500"))
-    child_chunk_size: int = int(os.getenv("CHILD_CHUNK_SIZE", "300"))
+    # --- Chunking ---
+    chunking_strategy: str = "auto"
+    chunk_size: int = 1000
+    chunk_overlap: int = 150
+    parent_chunk_size: int = 1500
+    child_chunk_size: int = 300
 
     # --- Retrieval ---
-    use_hybrid_search: bool = os.getenv("USE_HYBRID_SEARCH", "true").lower() in ("true", "1", "yes")
-    hybrid_alpha: float = float(os.getenv("HYBRID_ALPHA", "0.5"))
-    top_k: int = int(os.getenv("TOP_K", "6"))
-    fetch_k: int = int(os.getenv("FETCH_K", "25"))
-    min_retrieval_score: float = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.0"))
+    use_hybrid_search: bool = True
+    hybrid_alpha: float = 0.5
+    top_k: int = 6
+    fetch_k: int = 25
+    min_retrieval_score: float = 0.0
 
-    # --- API Security (Phase 2 & Wave 1) ---
-    require_auth: bool = os.getenv("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
-    api_keys: tuple = tuple([k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()])
-    max_upload_size_mb: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
-    cors_origins: tuple = tuple([o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()])
+    # --- API Security ---
+    app_env: Literal["development", "production", "test"] = "development"
+    require_auth: bool = False
+    api_keys: tuple[str, ...] = ()
+    max_upload_size_mb: int = 50
+    cors_origins: tuple[str, ...] = ("*",)
+    docs_enabled: bool = True
+    metrics_require_auth: bool = False
+    rate_limit_per_minute: int = 30
 
-    # --- Server-side document folder ---
-    # Files staged here are indexed by POST /v1/ingest/folder without being uploaded.
-    documents_dir: str = os.getenv("DOCUMENTS_DIR", "./data/documents")
+    # --- Documents ---
+    documents_dir: str = "./data/documents"
 
-    # --- MySQL Database Configuration ---
-    mysql_host: Optional[str] = os.getenv("MYSQL_HOST", None)
-    mysql_port: int = int(os.getenv("MYSQL_PORT", "3306"))
-    mysql_user: str = os.getenv("MYSQL_USER", "root")
-    mysql_password: str = os.getenv("MYSQL_PASSWORD", "")
-    mysql_database: str = os.getenv("MYSQL_DATABASE", "rag_xper_db")
+    # --- MySQL ---
+    mysql_host: str | None = None
+    mysql_port: int = 3306
+    mysql_user: str = "root"
+    mysql_password: str = ""
+    mysql_database: str = "rag_xper_db"
+    mysql_required: bool = False
+    run_db_migrations: bool = False
 
-    # --- Caching Memory Configuration ---
-    cache_enabled: bool = os.getenv("CACHE_ENABLED", "true").lower() in ("true", "1", "yes")
-    cache_ttl_seconds: int = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
-    cache_max_size: int = int(os.getenv("CACHE_MAX_SIZE", "1000"))
+    # --- Redis (optional job backend for multi-replica) ---
+    redis_url: str | None = None
+
+    # --- Cache ---
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 3600
+    cache_max_size: int = 1000
+
+    @field_validator("embedding_dim", mode="before")
+    @classmethod
+    def _parse_embedding_dim(cls, value: object) -> int:
+        if value is None or value == "":
+            return 0
+        return int(value)
+
+    @field_validator("ocr_languages", "api_keys", "cors_origins", mode="before")
+    @classmethod
+    def _split_comma_separated(cls, value: object) -> tuple[str, ...]:
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        if isinstance(value, (list, tuple)):
+            return tuple(str(item).strip() for item in value if str(item).strip())
+        return ()
+
+    @field_validator("vector_store_type", "chunking_strategy", "app_env", mode="before")
+    @classmethod
+    def _lowercase(cls, value: object) -> str:
+        return str(value).lower() if value is not None else ""
+
+    @field_validator(
+        "use_hybrid_search",
+        "require_auth",
+        "cache_enabled",
+        "docs_enabled",
+        "metrics_require_auth",
+        "mysql_required",
+        "run_db_migrations",
+        mode="before",
+    )
+    @classmethod
+    def _parse_bool(cls, value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes")
+        return bool(value)
+
+    @model_validator(mode="after")
+    def _derive_embedding_dim(self) -> Settings:
+        if self.embedding_dim <= 0:
+            object.__setattr__(
+                self,
+                "embedding_dim",
+                3072 if self.llm_provider == "gemini" else 768,
+            )
+        return self
 
     def validate(self) -> None:
         """Fail fast if required configuration is missing or unusable."""
-        if self.llm_provider not in ("gemini", "ollama"):
-            raise ConfigurationError(
-                f"Unknown LLM_PROVIDER '{self.llm_provider}'. Use 'gemini' or 'ollama'."
-            )
         if self.llm_provider == "gemini" and not self.gemini_api_key:
-            raise ConfigurationError(
-                "GEMINI_API_KEY is not set in .env. Please set GEMINI_API_KEY."
-            )
+            raise ConfigurationError("GEMINI_API_KEY is not set in .env. Please set GEMINI_API_KEY.")
         if self.require_auth and not self.api_keys:
-            raise ConfigurationError(
-                "REQUIRE_AUTH is true but API_KEYS is empty. Please set API_KEYS in .env."
-            )
+            raise ConfigurationError("REQUIRE_AUTH is true but API_KEYS is empty. Please set API_KEYS in .env.")
+        if self.app_env == "production":
+            if not self.require_auth or not self.api_keys:
+                raise ConfigurationError(
+                    "Production deployment requires REQUIRE_AUTH=true and non-empty API_KEYS."
+                )
+            if "*" in self.cors_origins:
+                raise ConfigurationError(
+                    "Production deployment cannot use CORS_ORIGINS=*; set explicit allowed origins."
+                )
         if self.chunk_overlap >= self.chunk_size:
             raise ConfigurationError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE.")
         if self.child_chunk_size >= self.parent_chunk_size:

@@ -3,11 +3,13 @@ rag_xper.core.db.session
 
 Database Engine & Session Management supporting MySQL and local SQLite fallback.
 """
+
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -37,25 +39,39 @@ def get_database_url() -> str:
 
 
 def init_engine():
-    """Initialize SQLAlchemy engine and create tables."""
+    """Initialize SQLAlchemy engine and ensure schema is up to date."""
     global _engine, _SessionFactory
     if _engine is not None:
         return _engine
 
     db_url = get_database_url()
+    mysql_configured = bool(settings.mysql_host and settings.mysql_database)
     try:
         if db_url.startswith("sqlite"):
             _engine = create_engine(db_url, connect_args={"check_same_thread": False})
         else:
             _engine = create_engine(db_url, pool_pre_ping=True, pool_size=5, max_overflow=10)
 
-        Base.metadata.create_all(bind=_engine)
+        if settings.run_db_migrations:
+            from rag_xper.core.db.migrate import run_migrations
+
+            run_migrations()
+        else:
+            Base.metadata.create_all(bind=_engine)
+
         _SessionFactory = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=_engine)
         logger.info("Database initialized successfully: %s", db_url.split("@")[-1] if "@" in db_url else db_url)
     except Exception as exc:
+        if settings.mysql_required and mysql_configured:
+            raise RuntimeError(f"MySQL is required but connection failed: {exc}") from exc
         logger.warning("Primary database connection failed (%s). Falling back to SQLite.", exc)
         _engine = create_engine("sqlite:///./storage/rag_xper.db", connect_args={"check_same_thread": False})
-        Base.metadata.create_all(bind=_engine)
+        if settings.run_db_migrations:
+            from rag_xper.core.db.migrate import run_migrations
+
+            run_migrations()
+        else:
+            Base.metadata.create_all(bind=_engine)
         _SessionFactory = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=_engine)
 
     return _engine

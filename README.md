@@ -117,7 +117,7 @@ The system provides a relational schema in `rag_xper_db` (UTF-8 Multi-byte `utf8
 - Fail-closed initialization: When `REQUIRE_AUTH=true`, the service refuses to start if `API_KEYS` is empty.
 - Stable document identity: `doc_id` generated via deterministic `uuid5(filename + file_bytes_hash)`.
 - Synchronized deletion: Deleting a document removes its points from Qdrant, BM25, and MySQL simultaneously.
-- Docker ports hardened: Qdrant (6333/6334) and Redis (6379) isolated within the internal network.
+- Docker ports hardened: Qdrant (6333/6334) isolated within the internal Docker network.
 
 ### Asynchronous Background Ingestion
 
@@ -132,33 +132,30 @@ The system provides a relational schema in `rag_xper_db` (UTF-8 Multi-byte `utf8
 ```text
 RAG_XPER/
 ├── apps/
-│   ├── web_dashboard/           # Enterprise XPER Web Interface (HTML, CSS, JS)
-│   └── gradio_ui/               # Developer exploration UI
+│   └── web_dashboard/           # Enterprise XPER Web Interface (HTML, CSS, JS)
 ├── src/
 │   └── rag_xper/                # Core production Python package
 │       ├── api/
-│       │   └── app.py           # FastAPI application and route handlers
+│       │   ├── app.py           # FastAPI application factory
+│       │   └── routes/          # health, ingest, ask, documents
 │       ├── cli/
-│       │   └── main.py          # Terminal CLI implementation
-│       ├── core/
-│       │   ├── cache.py         # In-Memory Query Cache with Arabic normalization
-│       │   ├── db/              # MySQL models, session, and CRUD service
-│       │   ├── generation/      # LLM interfaces and RAG orchestrator
-│       │   ├── ingestion/       # Extractors, OCR engine, and text chunkers
-│       │   └── retrieval/       # BM25 retriever, Qdrant store, and RRF fusion
-│       ├── utils/
-│       │   └── logger.py        # Structured JSON and standard logging
+│       │   ├── main.py          # Production CLI (ingest, ask, ingest-dir)
+│       │   └── interactive.py   # Desktop demo session with file picker
+│       ├── ui/
+│       │   └── gradio_app.py    # Gradio developer UI
+│       ├── core/                # ingestion, retrieval, generation, db, cache
 │       ├── bootstrap.py         # Component factory wiring
-│       └── config.py            # Centralized settings and validation
-├── tests/                       # 55 automated unit, stress, and security tests
-│   └── eval/                    # Retrieval evaluation suite and dataset
+│       └── config.py            # pydantic-settings configuration
+├── tests/                       # Unit, stress, security, and eval tests
 ├── scripts/
-│   └── init_mysql.sql           # MySQL database initialization script
+│   ├── dev.ps1                  # Windows developer helper
+│   └── init_mysql.sql
 ├── docker/
-│   ├── Dockerfile               # Multi-stage container definition with OCR
-│   └── docker-compose.yml       # Production composition with network isolation
-├── pyproject.toml               # Package configuration and dependencies
-└── README.md                    # Technical documentation
+├── docs/                        # ARCHITECTURE.md, deployment guides
+├── CONTRIBUTING.md
+├── Makefile                     # Linux/macOS developer commands
+├── pyproject.toml               # Project metadata and dependencies
+└── uv.lock                      # Locked dependency versions (uv)
 ```
 
 ---
@@ -167,33 +164,24 @@ RAG_XPER/
 
 ### Prerequisites
 
-- Python 3.10, 3.11, or 3.12
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
 - Git
 - Qdrant (optional, embedded storage supported natively)
 - MySQL 8.0+ (optional, SQLite fallback supported)
 
-### Step 1: Clone and Environment Setup
+Supported Python versions: **3.10**, **3.11**, **3.12** (see `.python-version` for the local default).
+
+### Step 1: Clone and install with uv
 
 ```bash
-git clone https://github.com/xper-erp/rag.git
-cd rag
-python -m venv .venv
-
-# On Linux/macOS:
-source .venv/bin/activate
-
-# On Windows (PowerShell):
-.venv\Scripts\Activate.ps1
+git clone <your-repo-url>
+cd RAG_XPER
+uv sync --extra all
 ```
 
-### Step 2: Install Package with Dependencies
+This creates `.venv/` automatically and installs the project in editable mode with all runtime and dev dependencies locked in `uv.lock`.
 
-```bash
-pip install --upgrade pip
-pip install -e ".[all]"
-```
-
-### Step 3: Environment Configuration
+### Step 2: Environment Configuration
 
 Copy the sample environment file and configure credentials:
 
@@ -227,62 +215,49 @@ CACHE_ENABLED=true
 
 ## Execution Modes
 
-### 1. Enterprise Web Dashboard
+All commands run through **uv** (no manual `pip` or `venv` activation needed):
 
-Launch the FastAPI application:
+| Mode | Command | URL |
+|------|---------|-----|
+| API + Web Dashboard | `uv run rag-xper-api` | `http://localhost:8000/ui` |
+| API docs (Swagger) | `uv run rag-xper-api` | `http://localhost:8000/docs` |
+| Gradio developer UI | `uv run rag-xper-ui` | `http://localhost:7861` |
+| CLI ingest / ask | `uv run rag-xper ingest ...` / `uv run rag-xper ask "..."` | — |
+| Interactive demo CLI | `uv run rag-xper interactive` | — |
+| Docker Compose (dev) | `docker compose -f docker/docker-compose.yml --env-file docker/.env up --build -d` | `http://localhost:8000` |
+| Docker Compose (prod) | `docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up --build -d` | `http://localhost:8000` |
 
-```bash
-rag-xper-api
-```
-
-Open a web browser and navigate to:
-- **Web Dashboard:** `http://localhost:8000/ui`
-- **API Documentation (Swagger):** `http://localhost:8000/docs`
-
-The Web Dashboard features:
-- Arabic Right-To-Left (RTL) interface with English language toggle.
-- Conversational interface with collapsible Chain-of-Thought reasoning.
-- Citation cards displaying source filenames and extracted page numbers.
-- Sub-5ms cache indicator for cached query responses.
-- Modal document upload with real-time background indexing progress.
-- MySQL Document Catalog table with search and deletion controls.
-
-### 2. REST API Backend (FastAPI)
-
-Run the server directly via Python:
+### Quick start examples
 
 ```bash
-python api.py
-```
+# Start the API and web dashboard
+uv run rag-xper-api
 
-### 3. Developer Web Interface (Gradio)
-
-For testing and parameter experimentation:
-
-```bash
-rag-xper-ui
-```
-
-Access at `http://localhost:7861`.
-
-### 4. Command-Line Interface (CLI)
-
-```bash
 # Ingest a document
-rag-xper ingest /path/to/document.pdf --strategy auto
+uv run rag-xper ingest /path/to/document.pdf --strategy auto
 
 # Ingest an entire directory
-rag-xper ingest-dir ./data/documents --recursive
+uv run rag-xper ingest-dir ./data/documents --recursive
 
 # Ask a question
-rag-xper ask "ما هي شروط قبول شهادة الشهود؟" --top-k 6
+uv run rag-xper ask "ما هي شروط قبول شهادة الشهود؟" --top-k 6
 ```
 
-### 5. Containerized Deployment (Docker Compose)
+### Developer helpers
 
 ```bash
-docker compose -f docker/docker-compose.yml up --build -d
+# Linux/macOS
+make sync && make test
+
+# Windows PowerShell
+.\scripts\dev.ps1 setup
+.\scripts\dev.ps1 test
+
+# Update lockfile after dependency changes
+uv lock
 ```
+
+> **Note:** Root scripts (`api.py`, `app.py`, `main.py`) are deprecated. Use the console commands above.
 
 ---
 

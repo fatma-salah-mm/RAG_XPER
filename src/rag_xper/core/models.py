@@ -3,11 +3,12 @@ rag_xper.core.models
 
 Shared, strongly-typed data structures passed between pipeline stages.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -15,10 +16,10 @@ import numpy as np
 class SourceType(str, Enum):
     """How a given page's text was obtained."""
 
-    NATIVE_TEXT = "native_text"   # extracted directly from the PDF's text layer
-    OCR = "ocr"                   # a scanned/image PDF page, resolved via OCR
-    IMAGE_FILE = "image_file"     # a standalone image file, resolved via OCR
-    MARKDOWN = "markdown"         # a plain text or markdown document (.md, .txt)
+    NATIVE_TEXT = "native_text"  # extracted directly from the PDF's text layer
+    OCR = "ocr"  # a scanned/image PDF page, resolved via OCR
+    IMAGE_FILE = "image_file"  # a standalone image file, resolved via OCR
+    MARKDOWN = "markdown"  # a plain text or markdown document (.md, .txt)
 
 
 @dataclass
@@ -29,8 +30,8 @@ class PageContent:
     page_number: int
     text: str
     source_type: SourceType
-    confidence: Optional[float] = None
-    raw_image: Optional[bytes] = field(default=None, repr=False)
+    confidence: float | None = None
+    raw_image: bytes | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -39,7 +40,7 @@ class Chunk:
 
     chunk_id: str
     text: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -48,7 +49,7 @@ class RetrievedChunk:
 
     chunk: Chunk
     score: float
-    embedding: Optional[np.ndarray] = field(default=None, repr=False)
+    embedding: np.ndarray | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -56,7 +57,7 @@ class RAGResponse:
     """Final, structured response returned by ``RAGOrchestrator.query``."""
 
     answer: str
-    reasoning: Optional[str]
-    sources: List[RetrievedChunk]
+    reasoning: str | None
+    sources: list[RetrievedChunk]
     query: str
-    strategy_used: Optional[str] = None
+    strategy_used: str | None = None

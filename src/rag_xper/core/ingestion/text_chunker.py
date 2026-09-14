@@ -8,14 +8,13 @@ Modular Chunking Engine implementing the Strategy Pattern:
 4. AutoDetectChunker: Inspects document heuristics to select optimal strategy
 5. ChunkerFactory: Factory method to instantiate strategies
 """
+
 from __future__ import annotations
 
 import abc
 import hashlib
 import re
-from typing import List, Optional
 
-from rag_xper.core.exceptions import ChunkingError
 from rag_xper.core.models import Chunk, PageContent
 from rag_xper.utils.logger import get_logger
 
@@ -31,7 +30,7 @@ class BaseChunker(abc.ABC):
     """Abstract Base Strategy for all chunking implementations."""
 
     @abc.abstractmethod
-    def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
+    def chunk_pages(self, pages: list[PageContent]) -> list[Chunk]:
         """Given a list of extracted pages, return a list of Chunk objects."""
         raise NotImplementedError
 
@@ -43,8 +42,8 @@ class RecursiveChunker(BaseChunker):
         self._chunk_size = chunk_size
         self._overlap = chunk_overlap
 
-    def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
-        chunks: List[Chunk] = []
+    def chunk_pages(self, pages: list[PageContent]) -> list[Chunk]:
+        chunks: list[Chunk] = []
         for page in pages:
             text = page.text.strip()
             if not text:
@@ -69,14 +68,14 @@ class RecursiveChunker(BaseChunker):
                 )
         return chunks
 
-    def _split_text(self, text: str) -> List[str]:
+    def _split_text(self, text: str) -> list[str]:
         if len(text) <= self._chunk_size:
             return [text]
 
         delimiters = ["\n\n", "\n", ". ", "، ", " ", ""]
         return self._recursive_split(text, delimiters, self._chunk_size, self._overlap)
 
-    def _recursive_split(self, text: str, delimiters: List[str], chunk_size: int, overlap: int) -> List[str]:
+    def _recursive_split(self, text: str, delimiters: list[str], chunk_size: int, overlap: int) -> list[str]:
         if not delimiters or len(text) <= chunk_size:
             return [text] if text else []
 
@@ -84,8 +83,8 @@ class RecursiveChunker(BaseChunker):
         sub_delims = delimiters[1:]
 
         parts = text.split(delim) if delim != "" else list(text)
-        result: List[str] = []
-        current: List[str] = []
+        result: list[str] = []
+        current: list[str] = []
         curr_len = 0
 
         for part in parts:
@@ -98,7 +97,7 @@ class RecursiveChunker(BaseChunker):
                     result.append(joined)
 
                 # Keep overlap from the end
-                overlap_accum: List[str] = []
+                overlap_accum: list[str] = []
                 overlap_len = 0
                 for prev in reversed(current):
                     if overlap_len + len(prev) <= overlap:
@@ -137,8 +136,8 @@ class ParentChildChunker(BaseChunker):
         self._parent_splitter = RecursiveChunker(chunk_size=parent_chunk_size, chunk_overlap=200)
         self._child_splitter = RecursiveChunker(chunk_size=child_chunk_size, chunk_overlap=child_overlap)
 
-    def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
-        all_chunks: List[Chunk] = []
+    def chunk_pages(self, pages: list[PageContent]) -> list[Chunk]:
+        all_chunks: list[Chunk] = []
         for page in pages:
             text = page.text.strip()
             if not text:
@@ -189,7 +188,7 @@ class ArticleBasedChunker(BaseChunker):
         self._fallback_max_size = fallback_max_size
         self._fallback_chunker = RecursiveChunker(chunk_size=fallback_max_size, chunk_overlap=150)
 
-    def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
+    def chunk_pages(self, pages: list[PageContent]) -> list[Chunk]:
         non_empty_pages = [p for p in pages if p.text and p.text.strip()]
         if not non_empty_pages:
             return []
@@ -209,7 +208,7 @@ class ArticleBasedChunker(BaseChunker):
         if not clean_articles:
             clean_articles = [joined_doc.strip()]
 
-        chunks: List[Chunk] = []
+        chunks: list[Chunk] = []
         for idx, art_text in enumerate(clean_articles):
             # Extract first page marker
             page_match = self._PAGE_MARKER_PATTERN.search(art_text)
@@ -267,7 +266,7 @@ class AutoDetectChunker(BaseChunker):
     def __init__(self, settings=None) -> None:
         self._settings = settings
 
-    def chunk_pages(self, pages: List[PageContent]) -> List[Chunk]:
+    def chunk_pages(self, pages: list[PageContent]) -> list[Chunk]:
         # Inspect up to 15 pages in full to catch legal patterns beyond cover page
         sample_text = " ".join([p.text for p in pages[:15]]).lower()
         is_legal = any(kw in sample_text for kw in self._LEGAL_KEYWORDS)

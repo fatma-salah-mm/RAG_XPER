@@ -3,11 +3,11 @@ rag_xper.core.db.service
 
 Service layer for Books catalog and Query logging operations.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
-from sqlalchemy.orm import Session
+from typing import Any
 
 from rag_xper.core.db.models import Book, QueryLog
 from rag_xper.core.db.session import get_db_session
@@ -20,14 +20,14 @@ def register_book(
     title: str,
     filename: str,
     file_path: str,
-    author: Optional[str] = None,
-    category: Optional[str] = "General",
+    author: str | None = None,
+    category: str | None = "General",
     file_size_bytes: int = 0,
-    content_hash: Optional[str] = None,
+    content_hash: str | None = None,
     total_pages: int = 1,
     chunk_count: int = 0,
     strategy_used: str = "recursive",
-    notes: Optional[str] = None,
+    notes: str | None = None,
 ) -> Book:
     """Insert or update a book/document in the catalog."""
     with get_db_session() as session:
@@ -61,7 +61,7 @@ def register_book(
         return book
 
 
-def list_books(category: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_books(category: str | None = None) -> list[dict[str, Any]]:
     """Fetch all cataloged books with optional category filter."""
     with get_db_session() as session:
         query = session.query(Book)
@@ -85,11 +85,11 @@ def delete_book(filename: str) -> bool:
 def log_query(
     question: str,
     answer: str,
-    reasoning: Optional[str] = None,
-    sources: Optional[List[Any]] = None,
+    reasoning: str | None = None,
+    sources: list[Any] | None = None,
     execution_time_ms: float = 0.0,
     is_cached: bool = False,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
 ) -> None:
     """Record query and response telemetry in database."""
     try:
@@ -109,7 +109,7 @@ def log_query(
         logger.warning("Failed to log query to database: %s", exc)
 
 
-def get_query_history(limit: int = 50, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_query_history(limit: int = 50, session_id: str | None = None) -> list[dict[str, Any]]:
     """Retrieve recent query history."""
     try:
         with get_db_session() as session:
